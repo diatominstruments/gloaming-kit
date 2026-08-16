@@ -617,6 +617,50 @@ var musicviz = (() => {
     }
   };
 
+  // src/visualizations/shape.js
+  function sampleTrace(wf, segments) {
+    const shape = new Float32Array(segments);
+    if (!wf) return shape;
+    const stride = wf.length / segments;
+    for (let i = 0; i < segments; i++) {
+      let sum = 0;
+      const s0 = Math.floor(i * stride);
+      const s1 = Math.floor((i + 1) * stride);
+      for (let j = s0; j < s1; j++) sum += wf[j] - 128;
+      shape[i] = sum / ((s1 - s0) * 128);
+    }
+    return shape;
+  }
+  function sampleEnvelope(wf, segments) {
+    const env = new Float32Array(segments);
+    if (!wf) return env;
+    const stride = wf.length / segments;
+    for (let i = 0; i < segments; i++) {
+      let sum = 0;
+      const s0 = Math.floor(i * stride);
+      const s1 = Math.floor((i + 1) * stride);
+      for (let j = s0; j < s1; j++) {
+        const v = (wf[j] - 128) / 128;
+        sum += v * v;
+      }
+      env[i] = Math.sqrt(sum / (s1 - s0));
+    }
+    return env;
+  }
+  function expandEnvelope(env, floor) {
+    if (!(floor > 0)) return env;
+    const span = 1 - floor;
+    for (let i = 0; i < env.length; i++) {
+      env[i] = env[i] > floor ? (env[i] - floor) / span : 0;
+    }
+    return env;
+  }
+  function signsOf(shape) {
+    const signs = new Float32Array(shape.length);
+    for (let i = 0; i < shape.length; i++) signs[i] = shape[i] < 0 ? -1 : 1;
+    return signs;
+  }
+
   // src/visualizations/road.js
   var Road = class _Road extends Visualization {
     static id = "road";
@@ -629,42 +673,69 @@ var musicviz = (() => {
     static SEGMENTS = 64;
     static SPEED = 9;
     // world units per second
+    // --- live rungs (tune these by eye) ---
+    static LIVE_EVERY = 3;
+    // 1 rung in N keeps tracking the music; 0 disables
+    static LIVE_TAU = 0.25;
+    // seconds to cover most of the way to the current
+    // envelope. Larger = smoother and lazier; below
+    // ~0.15 it starts to look like the jumpy waveform.
+    static LIVE_GAIN = 0.8;
+    // envelope → trace-sized displacement, so live
+    // rungs sit at the same scale as frozen ones.
+    static LIVE_FLOOR = 0.06;
+    // envelope below this reads as silence, so the
+    // line has something to fall back to. Raise until
+    // quiet passages flatten; too high and only the
+    // loudest peaks move the line at all.
     constructor(opts) {
       super(opts);
       this.rungs = [];
       this.sinceSpawn = _Road.SPACING;
+      this.spawned = 0;
     }
-    captureShape() {
-      const { SEGMENTS } = _Road;
-      const shape = new Float32Array(SEGMENTS);
-      const wf = this.frame?.waveform;
-      if (!wf) return shape;
-      const stride = wf.length / SEGMENTS;
-      for (let i = 0; i < SEGMENTS; i++) {
-        let sum = 0;
-        const s0 = Math.floor(i * stride);
-        const s1 = Math.floor((i + 1) * stride);
-        for (let j = s0; j < s1; j++) sum += wf[j] - 128;
-        shape[i] = sum / ((s1 - s0) * 128);
+    /**
+     * Ease every live rung toward the current envelope. One envelope is sampled
+     * per frame and shared: they're all reading the same instant, and they
+     * differ because each keeps its own silhouette and its own lag.
+     */
+    updateLive(dt) {
+      const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = _Road;
+      if (!this.rungs.some((r) => r.signs)) return;
+      const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
+      for (const rung of this.rungs) {
+        if (!rung.signs) continue;
+        for (let i = 0; i < SEGMENTS; i++) {
+          const target = rung.signs[i] * env[i] * LIVE_GAIN;
+          rung.shape[i] = approach(rung.shape[i], target, LIVE_TAU, dt);
+        }
       }
-      return shape;
     }
     draw(ctx, dt) {
-      const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED } = _Road;
+      const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, LIVE_EVERY } = _Road;
       const w = this.width;
       const h = this.height;
       const cx = w / 2;
       const horizonY = h * 0.42;
       const K = (h - horizonY) * Z_NEAR;
-      const W = w * 0.55 * Z_NEAR;
+      const W = w * 0.9 * Z_NEAR;
       const level = this.in("swell");
       for (const r of this.rungs) r.z -= SPEED * dt;
       this.rungs = this.rungs.filter((r) => r.z > Z_NEAR * 0.75);
       this.sinceSpawn += SPEED * dt;
       while (this.sinceSpawn >= SPACING) {
         this.sinceSpawn -= SPACING;
-        this.rungs.push({ z: Z_FAR - this.sinceSpawn, shape: this.captureShape(), level });
+        const shape = sampleTrace(this.frame?.waveform, SEGMENTS);
+        const live = LIVE_EVERY > 0 && this.spawned % LIVE_EVERY === 0;
+        this.spawned++;
+        this.rungs.push({
+          z: Z_FAR - this.sinceSpawn,
+          shape,
+          level,
+          signs: live ? signsOf(shape) : null
+        });
       }
+      this.updateLive(dt);
       this.applyStyle(ctx);
       ctx.globalAlpha *= 0.6;
       for (const side of [-1, 1]) {
@@ -694,6 +765,14 @@ var musicviz = (() => {
   };
 
   // src/visualizations/tunnel.js
+  var closeSeam = (shape, blend = 8) => {
+    const n = shape.length;
+    for (let i = 0; i < blend; i++) {
+      const t = i / blend;
+      shape[n - blend + i] = shape[n - blend + i] * (1 - t) + shape[0] * t;
+    }
+    return shape;
+  };
   var Tunnel = class _Tunnel extends Visualization {
     static id = "tunnel";
     static inputs = {
@@ -707,35 +786,50 @@ var musicviz = (() => {
     // world units per second
     static SPIN_SMOOTHING = 3;
     // higher = rotation tracks treble more tightly
+    // --- live rings (tune these by eye) ---
+    static LIVE_EVERY = 3;
+    // 1 ring in N keeps tracking the music; 0 disables
+    static LIVE_TAU = 0.45;
+    // seconds to cover most of the way to the current
+    // envelope. Larger = smoother and lazier; below
+    // ~0.15 it starts to look like the jumpy waveform.
+    static LIVE_GAIN = 0.8;
+    // envelope → trace-sized displacement, so live
+    // rings sit at the same scale as frozen ones.
+    static LIVE_FLOOR = 0.06;
+    // envelope below this reads as silence, so the
+    // ring has something to relax back to. Raise until
+    // quiet passages round the ring out; too high and
+    // only the loudest peaks deform it at all.
     constructor(opts) {
       super(opts);
       this.rings = [];
       this.sinceSpawn = _Tunnel.SPACING;
       this.rotation = 0;
       this.spinRate = 0;
+      this.spawned = 0;
     }
-    captureShape() {
-      const { SEGMENTS } = _Tunnel;
-      const shape = new Float32Array(SEGMENTS);
-      const wf = this.frame?.waveform;
-      if (!wf) return shape;
-      const stride = wf.length / SEGMENTS;
-      for (let i = 0; i < SEGMENTS; i++) {
-        let sum = 0;
-        const s0 = Math.floor(i * stride);
-        const s1 = Math.floor((i + 1) * stride);
-        for (let j = s0; j < s1; j++) sum += wf[j] - 128;
-        shape[i] = sum / ((s1 - s0) * 128);
+    /**
+     * Ease every live ring toward the current envelope. One envelope is sampled
+     * per frame and shared: they're all reading the same instant, and they
+     * differ because each keeps its own silhouette and its own lag.
+     */
+    updateLive(dt) {
+      const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = _Tunnel;
+      if (!this.rings.some((r) => r.signs)) return;
+      const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
+      for (const ring of this.rings) {
+        if (!ring.signs) continue;
+        const target = new Float32Array(SEGMENTS);
+        for (let i = 0; i < SEGMENTS; i++) target[i] = ring.signs[i] * env[i] * LIVE_GAIN;
+        closeSeam(target);
+        for (let i = 0; i < SEGMENTS; i++) {
+          ring.shape[i] = approach(ring.shape[i], target[i], LIVE_TAU, dt);
+        }
       }
-      const blend = 8;
-      for (let i = 0; i < blend; i++) {
-        const t = i / blend;
-        shape[SEGMENTS - blend + i] = shape[SEGMENTS - blend + i] * (1 - t) + shape[0] * t;
-      }
-      return shape;
     }
     draw(ctx, dt) {
-      const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, SPIN_SMOOTHING } = _Tunnel;
+      const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, SPIN_SMOOTHING, LIVE_EVERY } = _Tunnel;
       const cx = this.width / 2;
       const cy = this.height / 2;
       const focal = Math.min(this.width, this.height) * 0.14;
@@ -747,8 +841,16 @@ var musicviz = (() => {
       this.sinceSpawn += SPEED * dt;
       while (this.sinceSpawn >= SPACING) {
         this.sinceSpawn -= SPACING;
-        this.rings.push({ z: Z_FAR - this.sinceSpawn, shape: this.captureShape() });
+        const shape = closeSeam(sampleTrace(this.frame?.waveform, SEGMENTS));
+        const live = LIVE_EVERY > 0 && this.spawned % LIVE_EVERY === 0;
+        this.spawned++;
+        this.rings.push({
+          z: Z_FAR - this.sinceSpawn,
+          shape,
+          signs: live ? signsOf(shape) : null
+        });
       }
+      this.updateLive(dt);
       this.applyStyle(ctx);
       const sorted = [...this.rings].sort((a, b) => b.z - a.z);
       for (const ring of sorted) {
@@ -769,6 +871,207 @@ var musicviz = (() => {
         ctx.stroke();
         ctx.globalAlpha /= alpha;
       }
+    }
+  };
+
+  // src/visualizations/rolling-ball.js
+  var RollingBall = class _RollingBall extends Visualization {
+    static id = "rolling-ball";
+    static inputs = {
+      swerve: { kind: "event", default: TRIGGER.SNARE },
+      speed: { kind: "level", default: "rms" },
+      swell: { kind: "level", default: "bass" }
+    };
+    static LATITUDES = 7;
+    // rings between the poles
+    static MERIDIANS = 12;
+    // pole-to-pole half circles
+    static RESOLUTION = 48;
+    // points per full circle
+    static RADIUS = 0.3;
+    // of the smaller screen dimension
+    static SWELL = 0.14;
+    // extra radius at full `swell`
+    static BASE_SPIN = 0.9;
+    // rad/s at silence
+    static SPIN_GAIN = 2.4;
+    // extra rad/s at full `speed`
+    static SPIN_TAU = 0.35;
+    // roll rate is smoothed; tracking level directly
+    // makes the tumble stutter frame to frame
+    static TURN_TAU = 0.12;
+    // heading ease; small enough to read as a swerve
+    static MIN_TURN = 0.9;
+    // radians; smallest swerve a hit can produce
+    static MAX_TURN = 2.4;
+    // radians; largest, at full strength
+    static KICK_DECAY = 2.5;
+    // per second, for the post-hit speed surge
+    static BACK_ALPHA = 0.22;
+    // far hemisphere, relative to the near one
+    constructor(opts) {
+      super(opts);
+      this.lines = _RollingBall.buildWireframe();
+      this.m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+      this.heading = 0;
+      this.targetHeading = 0;
+      this.spin = _RollingBall.BASE_SPIN;
+      this.kick = 0;
+    }
+    /** Unit-sphere polylines: latitude rings plus pole-to-pole meridians. */
+    static buildWireframe() {
+      const { LATITUDES, MERIDIANS, RESOLUTION } = _RollingBall;
+      const lines = [];
+      for (let i = 1; i <= LATITUDES; i++) {
+        const phi = i / (LATITUDES + 1) * Math.PI;
+        const sp = Math.sin(phi);
+        const cp = Math.cos(phi);
+        const pts = new Float32Array((RESOLUTION + 1) * 3);
+        for (let j = 0; j <= RESOLUTION; j++) {
+          const th = j / RESOLUTION * Math.PI * 2;
+          pts[j * 3] = sp * Math.cos(th);
+          pts[j * 3 + 1] = cp;
+          pts[j * 3 + 2] = sp * Math.sin(th);
+        }
+        lines.push(pts);
+      }
+      const half = Math.round(RESOLUTION / 2);
+      for (let i = 0; i < MERIDIANS; i++) {
+        const th = i / MERIDIANS * Math.PI * 2;
+        const ct = Math.cos(th);
+        const st = Math.sin(th);
+        const pts = new Float32Array((half + 1) * 3);
+        for (let j = 0; j <= half; j++) {
+          const phi = j / half * Math.PI;
+          const sp = Math.sin(phi);
+          pts[j * 3] = sp * ct;
+          pts[j * 3 + 1] = Math.cos(phi);
+          pts[j * 3 + 2] = sp * st;
+        }
+        lines.push(pts);
+      }
+      return lines;
+    }
+    onInput(slot, { strength }) {
+      if (slot !== "swerve") return;
+      const { MIN_TURN, MAX_TURN } = _RollingBall;
+      const turn = MIN_TURN + strength * (MAX_TURN - MIN_TURN);
+      this.targetHeading += (Math.random() < 0.5 ? -1 : 1) * turn;
+      this.kick = Math.max(this.kick, strength);
+    }
+    /**
+     * Pre-multiply the accumulated orientation by a rotation of `angle` about
+     * the screen-space axis (ax, ay, 0), then pull the basis back onto the
+     * orthonormal manifold it drifts off of.
+     */
+    rotate(ax, ay, angle) {
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      const t = 1 - c;
+      const r = [
+        t * ax * ax + c,
+        t * ax * ay,
+        s * ay,
+        t * ax * ay,
+        t * ay * ay + c,
+        -s * ax,
+        -s * ay,
+        s * ax,
+        c
+      ];
+      const m = this.m;
+      const out = new Array(9);
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          out[i * 3 + j] = r[i * 3] * m[j] + r[i * 3 + 1] * m[3 + j] + r[i * 3 + 2] * m[6 + j];
+        }
+      }
+      let n = Math.hypot(out[0], out[1], out[2]) || 1;
+      out[0] /= n;
+      out[1] /= n;
+      out[2] /= n;
+      const d = out[0] * out[3] + out[1] * out[4] + out[2] * out[5];
+      out[3] -= out[0] * d;
+      out[4] -= out[1] * d;
+      out[5] -= out[2] * d;
+      n = Math.hypot(out[3], out[4], out[5]) || 1;
+      out[3] /= n;
+      out[4] /= n;
+      out[5] /= n;
+      out[6] = out[1] * out[5] - out[2] * out[4];
+      out[7] = out[2] * out[3] - out[0] * out[5];
+      out[8] = out[0] * out[4] - out[1] * out[3];
+      this.m = out;
+    }
+    draw(ctx, dt) {
+      const {
+        BASE_SPIN,
+        SPIN_GAIN,
+        SPIN_TAU,
+        TURN_TAU,
+        KICK_DECAY,
+        RADIUS,
+        SWELL,
+        BACK_ALPHA
+      } = _RollingBall;
+      const cx = this.width / 2;
+      const cy = this.height / 2;
+      this.kick = Math.max(0, this.kick - dt * KICK_DECAY);
+      this.heading = approach(this.heading, this.targetHeading, TURN_TAU, dt);
+      this.spin = approach(this.spin, BASE_SPIN + this.in("speed") * SPIN_GAIN, SPIN_TAU, dt);
+      this.rotate(-Math.sin(this.heading), Math.cos(this.heading), (this.spin + this.kick * 2) * dt);
+      const m = this.m;
+      const radius = Math.min(this.width, this.height) * RADIUS * (1 + this.in("swell") * SWELL + this.kick * 0.06);
+      const back = new Path2D();
+      const front = new Path2D();
+      for (const pts of this.lines) {
+        let prevPath = null;
+        let px = 0;
+        let py = 0;
+        let pz = 0;
+        for (let i = 0; i < pts.length; i += 3) {
+          const x = pts[i];
+          const y = pts[i + 1];
+          const z = pts[i + 2];
+          const rx = m[0] * x + m[1] * y + m[2] * z;
+          const ry = m[3] * x + m[4] * y + m[5] * z;
+          const rz = m[6] * x + m[7] * y + m[8] * z;
+          const sx = cx + rx * radius;
+          const sy = cy - ry * radius;
+          const path = rz >= 0 ? front : back;
+          if (prevPath === null) {
+            path.moveTo(sx, sy);
+          } else if (path === prevPath) {
+            path.lineTo(sx, sy);
+          } else {
+            const t = pz / (pz - rz);
+            const mx = px + (sx - px) * t;
+            const my = py + (sy - py) * t;
+            prevPath.lineTo(mx, my);
+            path.moveTo(mx, my);
+            path.lineTo(sx, sy);
+          }
+          prevPath = path;
+          px = sx;
+          py = sy;
+          pz = rz;
+        }
+      }
+      const baseAlpha = ctx.globalAlpha;
+      this.applyStyle(ctx);
+      ctx.globalAlpha = baseAlpha * BACK_ALPHA;
+      ctx.shadowBlur = 0;
+      ctx.stroke(back);
+      ctx.globalAlpha = baseAlpha;
+      ctx.shadowBlur = this.style.shadowBlur ?? 0;
+      ctx.stroke(front);
+      ctx.globalAlpha = baseAlpha * (0.35 + this.kick * 0.5);
+      ctx.strokeStyle = this.style.accentColor ?? this.style.lineColor;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = baseAlpha;
     }
   };
 
@@ -835,6 +1138,24 @@ var musicviz = (() => {
   };
 
   // src/visualizations/lightning.js
+  var subdivide = (pts, displace, passes, roughness) => {
+    for (let p = 0; p < passes; p++) {
+      const next = [pts[0]];
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1];
+        const b = pts[i];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const off = (Math.random() * 2 - 1) * displace;
+        next.push({ x: (a.x + b.x) / 2 - dy / len * off, y: (a.y + b.y) / 2 + dx / len * off });
+        next.push(b);
+      }
+      pts = next;
+      displace *= roughness;
+    }
+    return pts;
+  };
   var Lightning = class _Lightning extends Visualization {
     static id = "lightning";
     static inputs = {
@@ -852,7 +1173,20 @@ var musicviz = (() => {
     static FADE_SECONDS = 0.5;
     static MAX_SEGMENTS = 240;
     // per bolt, guards against fork blowup
-    static IDLE_STRIKE_SECONDS = 1.6;
+    static ROUGHNESS = 0.55;
+    // >0.5 keeps fine kinks sharp; 0.5 halves them
+    static PASSES = 5;
+    // main channel detail; 2^PASSES segments
+    // --- firing rate (tune these by ear) ---
+    static STRIKE_THRESHOLD = 0.35;
+    // trigger strength needed for a real bolt;
+    // weaker hits only flicker what's lit
+    static REFRACTORY_SECONDS = 0.4;
+    // hard floor on the gap between bolts, so a
+    // busy drum pattern can't become a strobe
+    static IDLE_STRIKE_SECONDS = 5;
+    // last-resort strike so a long quiet
+    // passage isn't an empty screen
     constructor(opts) {
       super(opts);
       this.bolts = [];
@@ -861,53 +1195,62 @@ var musicviz = (() => {
       this.sinceStrike = 0;
     }
     onInput(slot, { strength }) {
+      if (slot === "flicker") {
+        this.flicker = Math.max(this.flicker, 0.5 + strength * 0.5);
+        return;
+      }
+      if (slot !== "strike" && slot !== "offshoot") return;
+      const { STRIKE_THRESHOLD, REFRACTORY_SECONDS } = _Lightning;
+      if (strength < STRIKE_THRESHOLD || this.sinceStrike < REFRACTORY_SECONDS) {
+        this.flicker = Math.max(this.flicker, 0.3 + strength * 0.4);
+        return;
+      }
       if (slot === "strike") {
         this.strike(strength, 1);
         this.flash = Math.max(this.flash, 0.5 + strength * 0.5);
-      } else if (slot === "offshoot") {
+      } else {
         this.strike(strength, 0.55);
-      } else if (slot === "flicker") {
-        this.flicker = Math.max(this.flicker, 0.5 + strength * 0.5);
       }
     }
     /** Generate one bolt's full geometry and push it onto the live list. */
     strike(strength, reach) {
-      const { MAX_BOLTS, TIERS, MAX_SEGMENTS } = _Lightning;
+      const { MAX_BOLTS, TIERS, MAX_SEGMENTS, ROUGHNESS, PASSES } = _Lightning;
       const w = this.width;
       const h = this.height;
-      const wander = 0.22 + this.in("wander") * 0.5;
-      const forkChance = 0.14 + this.in("fork") * 0.22;
+      const jag = 0.1 + this.in("wander") * 0.16;
+      const forkChance = 0.1 + this.in("fork") * 0.16;
       const byTier = Array.from({ length: TIERS }, () => []);
       let count = 0;
       let maxDist = 0;
-      const walk = (x0, y0, heading, length, tier, startDist) => {
-        const steps = tier === 0 ? 24 : 9;
-        const stepLen = length / steps;
-        let x = x0;
-        let y = y0;
-        let angle = heading;
+      const emit = (x0, y0, heading, length, tier, startDist) => {
+        if (tier >= TIERS || count >= MAX_SEGMENTS) return;
+        const pts = subdivide(
+          [
+            { x: x0, y: y0 },
+            { x: x0 + Math.cos(heading) * length, y: y0 + Math.sin(heading) * length }
+          ],
+          length * jag,
+          tier === 0 ? PASSES : PASSES - 2,
+          ROUGHNESS
+        );
         let dist = startDist;
-        for (let i = 0; i < steps; i++) {
-          if (count >= MAX_SEGMENTS) return;
-          angle += (Math.random() * 2 - 1) * (tier === 0 ? wander : wander * 1.6);
-          angle += (heading - angle) * 0.3;
-          const nx = x + Math.cos(angle) * stepLen;
-          const ny = y + Math.sin(angle) * stepLen;
-          dist += Math.hypot(nx - x, ny - y);
-          byTier[tier].push({ x1: x, y1: y, x2: nx, y2: ny, dist });
-          count++;
-          if (dist > maxDist) maxDist = dist;
-          x = nx;
-          y = ny;
-          const forks = tier === 0 ? forkChance : forkChance * 0.4;
-          if (tier < TIERS - 1 && Math.random() < forks) {
-            const off = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.7);
-            walk(x, y, angle + off, length * (0.28 + Math.random() * 0.24), tier + 1, dist);
-          }
+        pts[0].dist = dist;
+        for (let i = 1; i < pts.length; i++) {
+          dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+          pts[i].dist = dist;
+        }
+        if (dist > maxDist) maxDist = dist;
+        count += pts.length - 1;
+        byTier[tier].push(pts);
+        const chance = tier === 0 ? forkChance : forkChance * 0.4;
+        for (let i = 1; i < pts.length - 1; i++) {
+          if (Math.random() >= chance) continue;
+          const local = Math.atan2(pts[i + 1].y - pts[i - 1].y, pts[i + 1].x - pts[i - 1].x);
+          const off = (Math.random() < 0.5 ? -1 : 1) * (0.45 + Math.random() * 0.75);
+          emit(pts[i].x, pts[i].y, local + off, length * (0.25 + Math.random() * 0.25), tier + 1, pts[i].dist);
         }
       };
-      walk(w * (0.12 + Math.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
-      for (const tier of byTier) tier.sort((a, b) => a.dist - b.dist);
+      emit(w * (0.12 + Math.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
       this.bolts.push({ byTier, maxDist, progress: 0, life: 1, strength });
       if (this.bolts.length > MAX_BOLTS) this.bolts.shift();
       this.sinceStrike = 0;
@@ -933,24 +1276,40 @@ var musicviz = (() => {
         ctx.fillRect(0, 0, this.width, this.height);
       }
       this.applyStyle(ctx);
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+      ctx.lineCap = "butt";
+      ctx.lineJoin = "miter";
+      ctx.miterLimit = 3;
       for (const b of this.bolts) {
         const frontier = b.progress * b.maxDist;
         const bright = (b.progress < 1 ? 1 : b.life) * (0.7 + this.flicker * 0.3);
         let headX = 0;
         let headY = 0;
         for (let tier = 0; tier < TIERS; tier++) {
-          const segs = b.byTier[tier];
           ctx.beginPath();
           let drawn = 0;
-          for (const s of segs) {
-            if (s.dist > frontier) break;
-            ctx.moveTo(s.x1, s.y1);
-            ctx.lineTo(s.x2, s.y2);
+          for (const pts of b.byTier[tier]) {
+            if (pts[0].dist > frontier) continue;
+            ctx.moveTo(pts[0].x, pts[0].y);
+            let lx = pts[0].x;
+            let ly = pts[0].y;
+            for (let i = 1; i < pts.length; i++) {
+              const p = pts[i];
+              if (p.dist > frontier) {
+                const q = pts[i - 1];
+                const span = p.dist - q.dist;
+                const t = span > 0 ? (frontier - q.dist) / span : 0;
+                lx = q.x + (p.x - q.x) * t;
+                ly = q.y + (p.y - q.y) * t;
+                ctx.lineTo(lx, ly);
+                break;
+              }
+              ctx.lineTo(p.x, p.y);
+              lx = p.x;
+              ly = p.y;
+            }
             if (tier === 0) {
-              headX = s.x2;
-              headY = s.y2;
+              headX = lx;
+              headY = ly;
             }
             drawn++;
           }
@@ -1399,6 +1758,7 @@ var musicviz = (() => {
       ParticleField,
       Road,
       Tunnel,
+      RollingBall,
       Starfield,
       Lightning,
       Harmonograph,

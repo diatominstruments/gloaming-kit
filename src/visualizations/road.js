@@ -1,10 +1,20 @@
-import { Visualization } from './base.js';
+import { Visualization, approach } from './base.js';
+import { sampleTrace, sampleEnvelope, expandEnvelope, signsOf } from './shape.js';
 
 /**
  * Road — perspective motion visualization. Transverse "rungs" spawn at the
  * horizon carrying a snapshot of the waveform at that moment, then fly
  * toward the viewer, so the road surface is the song's recent history
  * rendered as stacked oscilloscope traces.
+ *
+ * Every LIVE_EVERY'th rung is *live*: instead of keeping its birth snapshot
+ * it keeps tracking the music for its whole flight, easing toward the current
+ * envelope on a slow time constant. The road reads as history with a few
+ * threads still moving through it, rather than a conveyor of frozen frames.
+ *
+ * The slowness is the point. A line that follows the audio frame-for-frame
+ * (see the `waveform` visualization) reads as jumpy, so live rungs are
+ * deliberately damped — see LIVE_TAU.
  *
  * Travel speed is deliberately constant: tying it to the audio makes the
  * perspective motion stutter, since loudness swings frame to frame. The
@@ -23,37 +33,52 @@ export class Road extends Visualization {
   static SEGMENTS = 64;
   static SPEED = 9;     // world units per second
 
+  // --- live rungs (tune these by eye) ---
+  static LIVE_EVERY = 3;    // 1 rung in N keeps tracking the music; 0 disables
+  static LIVE_TAU = 0.25;   // seconds to cover most of the way to the current
+                            // envelope. Larger = smoother and lazier; below
+                            // ~0.15 it starts to look like the jumpy waveform.
+  static LIVE_GAIN = 0.8;   // envelope → trace-sized displacement, so live
+                            // rungs sit at the same scale as frozen ones.
+  static LIVE_FLOOR = 0.06; // envelope below this reads as silence, so the
+                            // line has something to fall back to. Raise until
+                            // quiet passages flatten; too high and only the
+                            // loudest peaks move the line at all.
+
   constructor(opts) {
     super(opts);
-    this.rungs = [];      // { z, shape: Float32Array, level }
+    this.rungs = [];      // { z, shape: Float32Array, level, signs|null }
     this.sinceSpawn = Road.SPACING;   // spawn one immediately
+    this.spawned = 0;     // counts every rung ever spawned, for the live stride
   }
 
-  captureShape() {
-    const { SEGMENTS } = Road;
-    const shape = new Float32Array(SEGMENTS);
-    const wf = this.frame?.waveform;
-    if (!wf) return shape;
-    const stride = wf.length / SEGMENTS;
-    for (let i = 0; i < SEGMENTS; i++) {
-      // Average the slice so single-sample spikes don't dominate.
-      let sum = 0;
-      const s0 = Math.floor(i * stride);
-      const s1 = Math.floor((i + 1) * stride);
-      for (let j = s0; j < s1; j++) sum += wf[j] - 128;
-      shape[i] = sum / ((s1 - s0) * 128);
+  /**
+   * Ease every live rung toward the current envelope. One envelope is sampled
+   * per frame and shared: they're all reading the same instant, and they
+   * differ because each keeps its own silhouette and its own lag.
+   */
+  updateLive(dt) {
+    const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Road;
+    if (!this.rungs.some((r) => r.signs)) return;
+    // Expanded once here, not per rung — every live rung reads the same instant.
+    const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
+    for (const rung of this.rungs) {
+      if (!rung.signs) continue;
+      for (let i = 0; i < SEGMENTS; i++) {
+        const target = rung.signs[i] * env[i] * LIVE_GAIN;
+        rung.shape[i] = approach(rung.shape[i], target, LIVE_TAU, dt);
+      }
     }
-    return shape;
   }
 
   draw(ctx, dt) {
-    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED } = Road;
+    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, LIVE_EVERY } = Road;
     const w = this.width;
     const h = this.height;
     const cx = w / 2;
     const horizonY = h * 0.42;
     const K = (h - horizonY) * Z_NEAR;   // projection: y = horizonY + K/z
-    const W = w * 0.55 * Z_NEAR;         // road half-width in world units
+    const W = w * 0.9 * Z_NEAR;         // road half-width in world units
 
     const level = this.in('swell');
 
@@ -63,11 +88,20 @@ export class Road extends Visualization {
     this.sinceSpawn += SPEED * dt;
     while (this.sinceSpawn >= SPACING) {
       this.sinceSpawn -= SPACING;
+      const shape = sampleTrace(this.frame?.waveform, SEGMENTS);
+      const live = LIVE_EVERY > 0 && this.spawned % LIVE_EVERY === 0;
+      this.spawned++;
       // Back-date the spawn by however far past the interval we landed, so
       // rungs stay exactly SPACING apart no matter where frame edges fall.
-      this.rungs.push({ z: Z_FAR - this.sinceSpawn, shape: this.captureShape(), level });
+      this.rungs.push({
+        z: Z_FAR - this.sinceSpawn,
+        shape,
+        level,
+        signs: live ? signsOf(shape) : null,
+      });
     }
 
+    this.updateLive(dt);
     this.applyStyle(ctx);
 
     // Converging road edges.

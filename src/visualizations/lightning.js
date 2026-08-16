@@ -11,12 +11,50 @@ import { TRIGGER } from '../analyzer.js';
  * strike time, then revealed by an advancing distance frontier, so the fork
  * points light up in the order the charge would actually reach them.
  *
+ * Shape comes from midpoint displacement (see `subdivide`) rather than a
+ * step-by-step random walk. A walk that nudges its heading each step traces
+ * smooth curves — it reads as a vein, not a bolt. Subdivision instead keeps
+ * long straight runs and breaks them with hard corners, which is what makes
+ * lightning look like lightning.
+ *
+ * Not every hit gets a bolt. Strikes are gated on strength and held apart by
+ * a refractory period, because a bolt per drum hit reads as a strobe with no
+ * relationship to the music; sub-threshold hits flicker the existing bolts
+ * instead. See STRIKE_THRESHOLD / REFRACTORY_SECONDS.
+ *
  * Performance note — the shape this replaced walked a recursive tree every
  * frame and issued a stroke per limb (~500 blurred strokes/frame). Here the
  * geometry is built once per strike and drawn as one batched path per tier,
  * with glow confined to the main channel: a handful of strokes per frame
  * regardless of how intricate the bolt is.
  */
+
+/**
+ * Midpoint displacement. Split every segment, kick each new midpoint out
+ * along the segment's perpendicular, then shrink the kick and go again. Each
+ * pass doubles the segment count, so `passes` is a detail level, and
+ * `roughness` below 0.5 smooths the result while above it keeps the small
+ * kinks sharp relative to the large ones.
+ */
+const subdivide = (pts, displace, passes, roughness) => {
+  for (let p = 0; p < passes; p++) {
+    const next = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const off = (Math.random() * 2 - 1) * displace;
+      next.push({ x: (a.x + b.x) / 2 - (dy / len) * off, y: (a.y + b.y) / 2 + (dx / len) * off });
+      next.push(b);
+    }
+    pts = next;
+    displace *= roughness;
+  }
+  return pts;
+};
+
 export class Lightning extends Visualization {
   static id = 'lightning';
   static inputs = {
@@ -32,7 +70,16 @@ export class Lightning extends Visualization {
   static GROW_SECONDS = 0.12;     // strike-to-full time; short is what sells it
   static FADE_SECONDS = 0.5;
   static MAX_SEGMENTS = 240;      // per bolt, guards against fork blowup
-  static IDLE_STRIKE_SECONDS = 1.6;
+  static ROUGHNESS = 0.55;        // >0.5 keeps fine kinks sharp; 0.5 halves them
+  static PASSES = 5;              // main channel detail; 2^PASSES segments
+
+  // --- firing rate (tune these by ear) ---
+  static STRIKE_THRESHOLD = 0.35;   // trigger strength needed for a real bolt;
+                                    // weaker hits only flicker what's lit
+  static REFRACTORY_SECONDS = 0.4;  // hard floor on the gap between bolts, so a
+                                    // busy drum pattern can't become a strobe
+  static IDLE_STRIKE_SECONDS = 5;   // last-resort strike so a long quiet
+                                    // passage isn't an empty screen
 
   constructor(opts) {
     super(opts);
@@ -43,67 +90,81 @@ export class Lightning extends Visualization {
   }
 
   onInput(slot, { strength }) {
+    if (slot === 'flicker') {
+      // Too frequent to spawn geometry for — brighten what's already lit.
+      this.flicker = Math.max(this.flicker, 0.5 + strength * 0.5);
+      return;
+    }
+    if (slot !== 'strike' && slot !== 'offshoot') return;
+
+    const { STRIKE_THRESHOLD, REFRACTORY_SECONDS } = Lightning;
+    if (strength < STRIKE_THRESHOLD || this.sinceStrike < REFRACTORY_SECONDS) {
+      // Rejected hits aren't discarded: they glow the sky instead of adding
+      // another bolt, so the small hits still register without the screen
+      // filling up and hiding which hits actually mattered.
+      this.flicker = Math.max(this.flicker, 0.3 + strength * 0.4);
+      return;
+    }
+
     if (slot === 'strike') {
       this.strike(strength, 1);
       this.flash = Math.max(this.flash, 0.5 + strength * 0.5);
-    } else if (slot === 'offshoot') {
+    } else {
       this.strike(strength, 0.55);
-    } else if (slot === 'flicker') {
-      // Too frequent to spawn geometry for — brighten what's already lit.
-      this.flicker = Math.max(this.flicker, 0.5 + strength * 0.5);
     }
   }
 
   /** Generate one bolt's full geometry and push it onto the live list. */
   strike(strength, reach) {
-    const { MAX_BOLTS, TIERS, MAX_SEGMENTS } = Lightning;
+    const { MAX_BOLTS, TIERS, MAX_SEGMENTS, ROUGHNESS, PASSES } = Lightning;
     const w = this.width;
     const h = this.height;
 
-    const wander = 0.22 + this.in('wander') * 0.5;
-    const forkChance = 0.14 + this.in('fork') * 0.22;
+    const jag = 0.10 + this.in('wander') * 0.16;      // displacement / length
+    const forkChance = 0.10 + this.in('fork') * 0.16;
 
-    // Bucketed by tier so drawing never has to filter, and sorted by
-    // distance-from-origin so the growth frontier is a break, not a scan.
+    // Bucketed by tier so drawing never has to filter. Each entry is one
+    // polyline; points carry cumulative distance from the strike origin, which
+    // is what the growth frontier cuts against.
     const byTier = Array.from({ length: TIERS }, () => []);
     let count = 0;
     let maxDist = 0;
 
-    const walk = (x0, y0, heading, length, tier, startDist) => {
-      const steps = tier === 0 ? 24 : 9;
-      const stepLen = length / steps;
-      let x = x0;
-      let y = y0;
-      let angle = heading;
+    const emit = (x0, y0, heading, length, tier, startDist) => {
+      if (tier >= TIERS || count >= MAX_SEGMENTS) return;
+
+      const pts = subdivide(
+        [
+          { x: x0, y: y0 },
+          { x: x0 + Math.cos(heading) * length, y: y0 + Math.sin(heading) * length },
+        ],
+        length * jag,
+        tier === 0 ? PASSES : PASSES - 2,
+        ROUGHNESS,
+      );
+
       let dist = startDist;
+      pts[0].dist = dist;
+      for (let i = 1; i < pts.length; i++) {
+        dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        pts[i].dist = dist;
+      }
+      if (dist > maxDist) maxDist = dist;
+      count += pts.length - 1;
+      byTier[tier].push(pts);
 
-      for (let i = 0; i < steps; i++) {
-        if (count >= MAX_SEGMENTS) return;
-        // Random walk, pulled back toward the channel's heading so a bolt
-        // jitters hard without ever losing its overall direction.
-        angle += (Math.random() * 2 - 1) * (tier === 0 ? wander : wander * 1.6);
-        angle += (heading - angle) * 0.3;
-
-        const nx = x + Math.cos(angle) * stepLen;
-        const ny = y + Math.sin(angle) * stepLen;
-        dist += Math.hypot(nx - x, ny - y);
-
-        byTier[tier].push({ x1: x, y1: y, x2: nx, y2: ny, dist });
-        count++;
-        if (dist > maxDist) maxDist = dist;
-        x = nx;
-        y = ny;
-
-        const forks = tier === 0 ? forkChance : forkChance * 0.4;
-        if (tier < TIERS - 1 && Math.random() < forks) {
-          const off = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.7);
-          walk(x, y, angle + off, length * (0.28 + Math.random() * 0.24), tier + 1, dist);
-        }
+      // Fork off interior vertices, angled away from the local direction of
+      // travel so a branch leaves at a corner rather than peeling off a curve.
+      const chance = tier === 0 ? forkChance : forkChance * 0.4;
+      for (let i = 1; i < pts.length - 1; i++) {
+        if (Math.random() >= chance) continue;
+        const local = Math.atan2(pts[i + 1].y - pts[i - 1].y, pts[i + 1].x - pts[i - 1].x);
+        const off = (Math.random() < 0.5 ? -1 : 1) * (0.45 + Math.random() * 0.75);
+        emit(pts[i].x, pts[i].y, local + off, length * (0.25 + Math.random() * 0.25), tier + 1, pts[i].dist);
       }
     };
 
-    walk(w * (0.12 + Math.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
-    for (const tier of byTier) tier.sort((a, b) => a.dist - b.dist);
+    emit(w * (0.12 + Math.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
 
     this.bolts.push({ byTier, maxDist, progress: 0, life: 1, strength });
     if (this.bolts.length > MAX_BOLTS) this.bolts.shift();
@@ -139,8 +200,12 @@ export class Lightning extends Visualization {
     }
 
     this.applyStyle(ctx);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    // Butt caps and mitered joins: round ones bevel every corner off, which is
+    // what turned the old bolts into smooth tubes. miterLimit keeps a near
+    // doubling-back from throwing a long spike.
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 3;
 
     for (const b of this.bolts) {
       const frontier = b.progress * b.maxDist;
@@ -149,14 +214,34 @@ export class Lightning extends Visualization {
       let headY = 0;
 
       for (let tier = 0; tier < TIERS; tier++) {
-        const segs = b.byTier[tier];
         ctx.beginPath();
         let drawn = 0;
-        for (const s of segs) {
-          if (s.dist > frontier) break;   // sorted: everything after is unborn
-          ctx.moveTo(s.x1, s.y1);
-          ctx.lineTo(s.x2, s.y2);
-          if (tier === 0) { headX = s.x2; headY = s.y2; }
+
+        for (const pts of b.byTier[tier]) {
+          if (pts[0].dist > frontier) continue;   // charge hasn't reached this fork
+          ctx.moveTo(pts[0].x, pts[0].y);
+          let lx = pts[0].x;
+          let ly = pts[0].y;
+
+          for (let i = 1; i < pts.length; i++) {
+            const p = pts[i];
+            if (p.dist > frontier) {
+              // Cut the segment at the frontier so the tip advances smoothly
+              // rather than popping a whole segment into existence.
+              const q = pts[i - 1];
+              const span = p.dist - q.dist;
+              const t = span > 0 ? (frontier - q.dist) / span : 0;
+              lx = q.x + (p.x - q.x) * t;
+              ly = q.y + (p.y - q.y) * t;
+              ctx.lineTo(lx, ly);
+              break;
+            }
+            ctx.lineTo(p.x, p.y);
+            lx = p.x;
+            ly = p.y;
+          }
+
+          if (tier === 0) { headX = lx; headY = ly; }
           drawn++;
         }
         if (drawn === 0) continue;

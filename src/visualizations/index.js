@@ -5,6 +5,7 @@ import { PolygonPulse } from './polygon-pulse.js';
 import { ParticleField } from './particles.js';
 import { Road } from './road.js';
 import { Tunnel } from './tunnel.js';
+import { RollingBall } from './rolling-ball.js';
 import { Starfield } from './starfield.js';
 import { Lightning } from './lightning.js';
 import { DeJong } from './attractor.js';
@@ -17,7 +18,7 @@ import { Harmonograph } from './harmonograph.js';
 export const registry = new Map(
   [
     EQBars, Waveform, RadialBurst, PolygonPulse, ParticleField,
-    Road, Tunnel, Starfield,
+    Road, Tunnel, RollingBall, Starfield,
     Lightning, Harmonograph,
     DeJong, Clifford, Bedhead, Thomas,
   ].map((V) => [V.id, V]),

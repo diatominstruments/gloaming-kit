@@ -1,10 +1,30 @@
-import { Visualization } from './base.js';
+import { Visualization, approach } from './base.js';
+import { sampleTrace, sampleEnvelope, expandEnvelope, signsOf } from './shape.js';
+
+/** Crossfade the tail into the head so the ring closes without a seam. */
+const closeSeam = (shape, blend = 8) => {
+  const n = shape.length;
+  for (let i = 0; i < blend; i++) {
+    const t = i / blend;
+    shape[n - blend + i] = shape[n - blend + i] * (1 - t) + shape[0] * t;
+  }
+  return shape;
+};
 
 /**
  * Tunnel — rings rush toward the viewer. Each ring is extruded from the
  * waveform at the moment it spawned, so the tunnel walls are a rolling
  * record of the sound. The whole tunnel slowly rotates, faster when the
  * high end is busy.
+ *
+ * Every LIVE_EVERY'th ring is *live*: rather than keeping its birth snapshot
+ * it goes on tracking the music for its whole flight, easing toward the
+ * current envelope on a slow time constant. The wall reads as a record with
+ * a few ribs still flexing in it.
+ *
+ * The slowness is the point. A ring that follows the audio frame-for-frame
+ * (see the `waveform` visualization) reads as jumpy, so live rings are
+ * deliberately damped — see LIVE_TAU.
  *
  * Travel speed is deliberately constant — driving it from the audio makes
  * the approach stutter. The song shows up in the ring shapes and in the
@@ -24,38 +44,53 @@ export class Tunnel extends Visualization {
   static SPEED = 0.75;   // world units per second
   static SPIN_SMOOTHING = 3;   // higher = rotation tracks treble more tightly
 
+  // --- live rings (tune these by eye) ---
+  static LIVE_EVERY = 3;    // 1 ring in N keeps tracking the music; 0 disables
+  static LIVE_TAU = 0.45;   // seconds to cover most of the way to the current
+                            // envelope. Larger = smoother and lazier; below
+                            // ~0.15 it starts to look like the jumpy waveform.
+  static LIVE_GAIN = 0.8;   // envelope → trace-sized displacement, so live
+                            // rings sit at the same scale as frozen ones.
+  static LIVE_FLOOR = 0.06; // envelope below this reads as silence, so the
+                            // ring has something to relax back to. Raise until
+                            // quiet passages round the ring out; too high and
+                            // only the loudest peaks deform it at all.
+
   constructor(opts) {
     super(opts);
-    this.rings = [];       // { z, shape: Float32Array }
+    this.rings = [];       // { z, shape: Float32Array, signs|null }
     this.sinceSpawn = Tunnel.SPACING;   // spawn one immediately
     this.rotation = 0;
     this.spinRate = 0;
+    this.spawned = 0;      // counts every ring ever spawned, for the live stride
   }
 
-  captureShape() {
-    const { SEGMENTS } = Tunnel;
-    const shape = new Float32Array(SEGMENTS);
-    const wf = this.frame?.waveform;
-    if (!wf) return shape;
-    const stride = wf.length / SEGMENTS;
-    for (let i = 0; i < SEGMENTS; i++) {
-      let sum = 0;
-      const s0 = Math.floor(i * stride);
-      const s1 = Math.floor((i + 1) * stride);
-      for (let j = s0; j < s1; j++) sum += wf[j] - 128;
-      shape[i] = sum / ((s1 - s0) * 128);
+  /**
+   * Ease every live ring toward the current envelope. One envelope is sampled
+   * per frame and shared: they're all reading the same instant, and they
+   * differ because each keeps its own silhouette and its own lag.
+   */
+  updateLive(dt) {
+    const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Tunnel;
+    if (!this.rings.some((r) => r.signs)) return;
+    // Expanded once here, not per ring — every live ring reads the same instant.
+    const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
+    for (const ring of this.rings) {
+      if (!ring.signs) continue;
+      const target = new Float32Array(SEGMENTS);
+      for (let i = 0; i < SEGMENTS; i++) target[i] = ring.signs[i] * env[i] * LIVE_GAIN;
+      // The seam has to be re-closed on the *target*, not once at birth —
+      // otherwise easing toward an open shape reopens the kink at the top of
+      // the ring within a second or so.
+      closeSeam(target);
+      for (let i = 0; i < SEGMENTS; i++) {
+        ring.shape[i] = approach(ring.shape[i], target[i], LIVE_TAU, dt);
+      }
     }
-    // Crossfade the tail into the head so the ring closes without a seam.
-    const blend = 8;
-    for (let i = 0; i < blend; i++) {
-      const t = i / blend;
-      shape[SEGMENTS - blend + i] = shape[SEGMENTS - blend + i] * (1 - t) + shape[0] * t;
-    }
-    return shape;
   }
 
   draw(ctx, dt) {
-    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, SPIN_SMOOTHING } = Tunnel;
+    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, SPIN_SMOOTHING, LIVE_EVERY } = Tunnel;
     const cx = this.width / 2;
     const cy = this.height / 2;
     const focal = Math.min(this.width, this.height) * 0.14;
@@ -69,11 +104,19 @@ export class Tunnel extends Visualization {
     this.sinceSpawn += SPEED * dt;
     while (this.sinceSpawn >= SPACING) {
       this.sinceSpawn -= SPACING;
+      const shape = closeSeam(sampleTrace(this.frame?.waveform, SEGMENTS));
+      const live = LIVE_EVERY > 0 && this.spawned % LIVE_EVERY === 0;
+      this.spawned++;
       // Back-date by the overshoot so ring spacing is independent of where
       // frame boundaries happen to fall.
-      this.rings.push({ z: Z_FAR - this.sinceSpawn, shape: this.captureShape() });
+      this.rings.push({
+        z: Z_FAR - this.sinceSpawn,
+        shape,
+        signs: live ? signsOf(shape) : null,
+      });
     }
 
+    this.updateLive(dt);
     this.applyStyle(ctx);
     const sorted = [...this.rings].sort((a, b) => b.z - a.z);
     for (const ring of sorted) {
