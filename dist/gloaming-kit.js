@@ -208,11 +208,7 @@ var gloamingKit = (() => {
       this.ctx = audioContext ?? new (window.AudioContext || window.webkitAudioContext)();
       this.output = this.ctx.createGain();
       this.output.connect(this.ctx.destination);
-      this.buffer = null;
       this.source = null;
-      this.startedAt = 0;
-      this.offset = 0;
-      this.playing = false;
       this.playToken = 0;
     }
     async load(song) {
@@ -238,47 +234,27 @@ var gloamingKit = (() => {
       return this.source?.playing ?? false;
     }
     async play() {
-      if (!this.buffer || this.playing) return;
-      this.playing = true;
-      this.startedAt = this.ctx.currentTime;
-      const token = ++this.playToken;
+      const source = this.source;
+      if (!source || source.playing) return;
       if (this.ctx.state === "suspended") {
+        const token = ++this.playToken;
         await this.ctx.resume();
-        if (!this.playing || this.playToken !== token) return;
+        if (this.playToken !== token || this.source !== source) return;
       }
-      const source = this.ctx.createBufferSource();
-      this.source = source;
-      source.buffer = this.buffer;
-      source.connect(this.output);
-      source.onended = () => {
-        if (this.source !== source) return;
-        if (this.playing && this.currentTime >= this.duration - 0.05) {
-          this.playing = false;
-          this.offset = 0;
-          this.emit("ended");
-        }
-      };
-      source.start(0, this.offset);
-      this.startedAt = this.ctx.currentTime;
-      this.emit("play");
+      source.play();
     }
     pause() {
+      this.playToken++;
       this.source?.pause();
     }
     seek(time) {
       this.source?.seek(time);
     }
-    /** Tear down the current source node without emitting events. */
-    stop() {
-      this.playing = false;
-      if (this.source) {
-        try {
-          this.source.stop();
-        } catch {
-        }
-        this.source.disconnect();
-        this.source = null;
-      }
+    /** Release the current source without emitting events. */
+    teardown() {
+      this.playToken++;
+      this.source?.teardown();
+      this.source = null;
     }
   };
 
