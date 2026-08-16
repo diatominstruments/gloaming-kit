@@ -162,9 +162,9 @@ export class PointCloudAttractor extends AttractorBase {
  * the equation's parameters changes the attractor itself, but only newly
  * integrated points land on the new shape — the visible ribbon takes a full
  * trail-length to catch up, so it reads as slow structural morphing and
- * can't be beat-synced. TWIST and PULSE instead deform the trail at draw
- * time, reshaping every visible point at once, which is what makes them
- * usable for hits.
+ * can't be beat-synced. The beat response is rigid instead: a hit whips the
+ * view's yaw rate and briefly swells the whole figure (KICK_SPIN / PULSE),
+ * moving every visible point at once without deforming the trail.
  *
  * Subclasses implement `derivative(x, y, z, p, out)`.
  */
@@ -186,13 +186,16 @@ export class FlowAttractor extends AttractorBase {
   static SPIN = [0.25, 0.6];  // [idle, per unit of mid energy] yaw rate, rad/s
   static LIMIT = 1e4;
 
-  // Draw-time deformation. TWIST is [idle amplitude, added by a full-strength
-  // hit] in radians of corkscrew per world unit of height — so it scales with
-  // the system's own extent and needs retuning per attractor. PULSE is the
-  // radial swell a full-strength hit adds.
-  static TWIST = [0.05, 0.3];
-  static PULSE = 0.7;
-  static WARP_DECAY = 5.2;
+  // Draw-time beat response, all of it rigid — a hit whips the yaw and
+  // briefly swells the figure. Shearing the trail itself on hits (a
+  // strength-driven corkscrew) was tried and cut: displacement proportional
+  // to height bends the ribbon like a bone rather than moving it.
+  // TWIST is the idle corkscrew, in radians per world unit of height — it
+  // scales with the system's extent, so it may need retuning per attractor.
+  static TWIST = 0.05;
+  static KICK_SPIN = 2.2;   // extra yaw rate at full strength, rad/s
+  static PULSE = 0.2;       // radial swell at full strength
+  static KICK_DECAY = 3.2;  // exponential rate; ~0.3s time constant
 
   constructor(opts) {
     super(opts);
@@ -203,7 +206,7 @@ export class FlowAttractor extends AttractorBase {
     this.yaw = 0;
     this.spin = this.constructor.SPIN[0];
     this.surge = 0;
-    this.warp = 0;
+    this.kick = 0;
     // Scratch for RK4, preallocated so integration never allocates.
     this.k = [0, 1, 2, 3].map(() => new Float64Array(3));
     this.tmp = new Float64Array(3);
@@ -219,8 +222,9 @@ export class FlowAttractor extends AttractorBase {
     super.onInput(slot, data);
     // Bass surges travel speed as well as nudging parameters: on a system
     // this stiff, parameter jolts alone are too subtle to read as a hit.
+    // The kick drives the rigid beat response — yaw whip and swell.
     this.surge = Math.max(this.surge, data.strength);
-    // this.warp = Math.max(this.warp, data.strength);
+    this.kick = Math.max(this.kick, data.strength);
   }
 
   /** One classical RK4 step of size `h`, advancing `this.state` in place. */
@@ -254,11 +258,14 @@ export class FlowAttractor extends AttractorBase {
   draw(ctx, dt) {
     const {
       TRAIL, SUBSTEPS, H, SPEED, SEED, CENTER, SCALE, FOCAL, CHUNKS, SPIN, LIMIT,
-      TWIST, PULSE, WARP_DECAY,
+      TWIST, KICK_SPIN, PULSE, KICK_DECAY,
     } = this.constructor;
     this.updateParams(dt);
 
     this.surge = Math.max(0, this.surge - dt * 2.5);
+    // Exponential, not linear: a linear ramp ends in a corner where the whip
+    // stops dead, which reads as snapping back. This eases out instead.
+    this.kick *= Math.exp(-dt * KICK_DECAY);
     const h = H * (SPEED[0] + this.in('travel') * SPEED[1] + this.surge * 1.5);
 
     const s = this.state;
@@ -273,16 +280,17 @@ export class FlowAttractor extends AttractorBase {
     }
 
     // Rotation as a rate, eased, so the view never jumps when the mix shifts.
+    // The kick adds a decaying whip on hits — extra *rate*, so the figure
+    // accelerates round and eases off rather than jumping to a new angle.
     this.spin = approach(this.spin, SPIN[0] + this.in('spin') * SPIN[1], 0.3, dt);
-    this.yaw += this.spin * dt;
+    this.yaw += (this.spin + this.kick * KICK_SPIN) * dt;
     const pitch = 0.35 + Math.sin(this.t * 0.4) * 0.18;
 
-    // Corkscrew and swell. The idle term rides `this.t`, which advances with
-    // mid energy, so the shape keeps writhing between hits and writhes faster
-    // when the track is busy.
-    this.warp = Math.max(0, this.warp - dt * WARP_DECAY);
-    const twist = TWIST[0] * Math.sin(this.t * 0.55) + TWIST[1] * this.warp;
-    const swell = 1 + PULSE * this.warp;
+    // Idle corkscrew rides `this.t`, which advances with mid energy, so the
+    // shape keeps writhing between hits and writhes faster when the track is
+    // busy. Hits swell the figure uniformly — never shear it.
+    const twist = TWIST * Math.sin(this.t * 0.55);
+    const swell = 1 + PULSE * this.kick;
 
     const cx = this.width / 2;
     const cy = this.height / 2;

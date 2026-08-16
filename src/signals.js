@@ -133,6 +133,23 @@ export function compileLevel(spec, path = 'input') {
 }
 
 /**
+ * Every trigger name referenced anywhere in a level spec, including inside
+ * sum/max nests. Exists for validation: the compiler itself never sees the
+ * analyzer, so it can't know whether an envelope's trigger is configured —
+ * the engine collects the names and checks at spawn time.
+ */
+export function referencedTriggers(spec, into = []) {
+  if (Array.isArray(spec)) {
+    for (const s of spec) referencedTriggers(s, into);
+  } else if (spec && typeof spec === 'object') {
+    if (typeof spec.trigger === 'string') into.push(spec.trigger);
+    if (Array.isArray(spec.sum)) referencedTriggers(spec.sum, into);
+    if (Array.isArray(spec.max)) referencedTriggers(spec.max, into);
+  }
+  return into;
+}
+
+/**
  * Resolve an event spec to a trigger name. Event slots only ever alias one
  * trigger to another — there is nothing to combine, since a response like
  * "snap to a new ratio" has to happen once, on the hit.

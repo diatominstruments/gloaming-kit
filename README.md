@@ -142,6 +142,7 @@ viz.on('trigger:bass', ({ strength }) => { /* app-level reactions */ });
 | `radial-burst` | hits launch expanding rings from the centre and scatter ticks around the rim; a centre circle breathes |
 | `polygon-pulse` | rotating polygon; radius pulses, side count morphs, hits kick the spin |
 | `particles` | drifting particles that twinkle; hits shove every particle outward |
+| `rolling-ball` | wireframe sphere tumbling in place — loudness sets the roll rate, bass swells it, and snare hits swerve it onto a new heading |
 
 **Motion set** — perspective visuals that put the viewer in motion. Travel
 speed is a fixed constant in all three (tune it via the class's `SPEED`
@@ -163,7 +164,7 @@ fast you fly.
 | `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure |
 | `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions as `attractor` |
 | `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions as `attractor` |
-| `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while corkscrewing and swelling the ribbon |
+| `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
 
 ## Routing
@@ -219,6 +220,7 @@ accumulated state restarts.
 | `radial-burst` | `ring` ← bass, `scatter` ← hihat | `core` ← bass |
 | `polygon-pulse` | `kick` ← snare, `punch` ← bass | `sides` ← mid, `swell` ← bass |
 | `particles` | `shove` ← bass | `twinkle` ← treble |
+| `rolling-ball` | `swerve` ← snare | `speed` ← rms, `swell` ← bass |
 | `road` | — | `swell` ← rms |
 | `tunnel` | — | `spin` ← treble |
 | `starfield` | `swell` ← bass | — |

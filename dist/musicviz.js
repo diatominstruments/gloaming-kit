@@ -58,6 +58,7 @@ var musicviz = (() => {
       this.startedAt = 0;
       this.offset = 0;
       this.playing = false;
+      this.playToken = 0;
     }
     /** Accepts a URL string or a File/Blob (e.g. from an <input type="file">). */
     async load(song) {
@@ -77,20 +78,27 @@ var musicviz = (() => {
     }
     async play() {
       if (!this.buffer || this.playing) return;
-      if (this.ctx.state === "suspended") await this.ctx.resume();
-      this.source = this.ctx.createBufferSource();
-      this.source.buffer = this.buffer;
-      this.source.connect(this.output);
-      this.source.onended = () => {
+      this.playing = true;
+      this.startedAt = this.ctx.currentTime;
+      const token = ++this.playToken;
+      if (this.ctx.state === "suspended") {
+        await this.ctx.resume();
+        if (!this.playing || this.playToken !== token) return;
+      }
+      const source = this.ctx.createBufferSource();
+      this.source = source;
+      source.buffer = this.buffer;
+      source.connect(this.output);
+      source.onended = () => {
+        if (this.source !== source) return;
         if (this.playing && this.currentTime >= this.duration - 0.05) {
           this.playing = false;
           this.offset = 0;
           this.emit("ended");
         }
       };
-      this.source.start(0, this.offset);
+      source.start(0, this.offset);
       this.startedAt = this.ctx.currentTime;
-      this.playing = true;
       this.emit("play");
     }
     pause() {
@@ -110,8 +118,8 @@ var musicviz = (() => {
     }
     /** Tear down the current source node without emitting events. */
     stop() {
+      this.playing = false;
       if (this.source) {
-        this.playing = false;
         try {
           this.source.stop();
         } catch {
@@ -170,6 +178,7 @@ var musicviz = (() => {
     bandEnergy(lo, hi) {
       const start = Math.max(0, Math.floor(lo / this.binHz));
       const end = Math.min(this.spectrum.length - 1, Math.ceil(hi / this.binHz));
+      if (end < start) return 0;
       let sum = 0;
       for (let i = start; i <= end; i++) sum += this.spectrum[i];
       return sum / ((end - start + 1) * 255);
@@ -193,12 +202,14 @@ var musicviz = (() => {
       this.emit("frame", frame);
       this.fired.clear();
       for (const t of this.triggers) {
+        if (t.lastFired > time) t.lastFired = -Infinity;
         const energy = this.bandEnergy(t.band[0], t.band[1]);
         const rising = energy > t.prevEnergy;
         const offCooldown = time - t.lastFired >= t.cooldown;
         if (energy >= t.threshold && rising && offCooldown) {
           t.lastFired = time;
-          const strength = Math.min(1, (energy - t.threshold) / (1 - t.threshold));
+          const range = 1 - t.threshold;
+          const strength = range > 0 ? Math.min(1, (energy - t.threshold) / range) : 1;
           const data = { name: t.name, time, energy, strength };
           this.fired.set(t.name, data);
           this.emit(`trigger:${t.name}`, data);
@@ -341,6 +352,16 @@ var musicviz = (() => {
     }
     return signal;
   }
+  function referencedTriggers(spec, into = []) {
+    if (Array.isArray(spec)) {
+      for (const s of spec) referencedTriggers(s, into);
+    } else if (spec && typeof spec === "object") {
+      if (typeof spec.trigger === "string") into.push(spec.trigger);
+      if (Array.isArray(spec.sum)) referencedTriggers(spec.sum, into);
+      if (Array.isArray(spec.max)) referencedTriggers(spec.max, into);
+    }
+    return into;
+  }
   function resolveEvent(spec, path = "input") {
     if (typeof spec === "string") return spec;
     if (spec && typeof spec === "object" && typeof spec.trigger === "string") return spec.trigger;
@@ -416,8 +437,8 @@ var musicviz = (() => {
       const barW = (this.width - gap * (n + 1)) / n;
       const maxH = this.height * 0.75;
       this.applyStyle(ctx);
+      let lo = 1;
       for (let i = 0; i < n; i++) {
-        const lo = Math.floor(Math.pow(spectrum.length, i / n));
         const hi = Math.max(lo + 1, Math.floor(Math.pow(spectrum.length, (i + 1) / n)));
         let sum = 0;
         for (let j = lo; j < hi; j++) sum += spectrum[j];
@@ -429,6 +450,7 @@ var musicviz = (() => {
         ctx.globalAlpha *= 0.9;
         ctx.fillRect(x, y, barW, h);
         ctx.globalAlpha /= 0.9;
+        lo = hi;
       }
     }
   };
@@ -726,7 +748,7 @@ var musicviz = (() => {
     for (let i = 0; i < segments; i++) {
       let sum = 0;
       const s0 = Math.floor(i * stride);
-      const s1 = Math.floor((i + 1) * stride);
+      const s1 = Math.max(s0 + 1, Math.floor((i + 1) * stride));
       for (let j = s0; j < s1; j++) sum += wf[j] - 128;
       shape[i] = sum / ((s1 - s0) * 128);
     }
@@ -739,7 +761,7 @@ var musicviz = (() => {
     for (let i = 0; i < segments; i++) {
       let sum = 0;
       const s0 = Math.floor(i * stride);
-      const s1 = Math.floor((i + 1) * stride);
+      const s1 = Math.max(s0 + 1, Math.floor((i + 1) * stride));
       for (let j = s0; j < s1; j++) {
         const v = (wf[j] - 128) / 128;
         sum += v * v;
@@ -1563,13 +1585,19 @@ var musicviz = (() => {
     static SPIN = [0.25, 0.6];
     // [idle, per unit of mid energy] yaw rate, rad/s
     static LIMIT = 1e4;
-    // Draw-time deformation. TWIST is [idle amplitude, added by a full-strength
-    // hit] in radians of corkscrew per world unit of height — so it scales with
-    // the system's own extent and needs retuning per attractor. PULSE is the
-    // radial swell a full-strength hit adds.
-    static TWIST = [0.05, 0.3];
-    static PULSE = 0.7;
-    static WARP_DECAY = 5.2;
+    // Draw-time beat response, all of it rigid — a hit whips the yaw and
+    // briefly swells the figure. Shearing the trail itself on hits (a
+    // strength-driven corkscrew) was tried and cut: displacement proportional
+    // to height bends the ribbon like a bone rather than moving it.
+    // TWIST is the idle corkscrew, in radians per world unit of height — it
+    // scales with the system's extent, so it may need retuning per attractor.
+    static TWIST = 0.05;
+    static KICK_SPIN = 2.2;
+    // extra yaw rate at full strength, rad/s
+    static PULSE = 0.2;
+    // radial swell at full strength
+    static KICK_DECAY = 3.2;
+    // exponential rate; ~0.3s time constant
     constructor(opts) {
       super(opts);
       this.state = new Float64Array(this.constructor.SEED);
@@ -1579,7 +1607,7 @@ var musicviz = (() => {
       this.yaw = 0;
       this.spin = this.constructor.SPIN[0];
       this.surge = 0;
-      this.warp = 0;
+      this.kick = 0;
       this.k = [0, 1, 2, 3].map(() => new Float64Array(3));
       this.tmp = new Float64Array(3);
     }
@@ -1591,6 +1619,7 @@ var musicviz = (() => {
     onInput(slot, data) {
       super.onInput(slot, data);
       this.surge = Math.max(this.surge, data.strength);
+      this.kick = Math.max(this.kick, data.strength);
     }
     /** One classical RK4 step of size `h`, advancing `this.state` in place. */
     integrate(h, p) {
@@ -1630,11 +1659,13 @@ var musicviz = (() => {
         SPIN,
         LIMIT,
         TWIST,
+        KICK_SPIN,
         PULSE,
-        WARP_DECAY
+        KICK_DECAY
       } = this.constructor;
       this.updateParams(dt);
       this.surge = Math.max(0, this.surge - dt * 2.5);
+      this.kick *= Math.exp(-dt * KICK_DECAY);
       const h = H * (SPEED[0] + this.in("travel") * SPEED[1] + this.surge * 1.5);
       const s = this.state;
       for (let i = 0; i < SUBSTEPS; i++) {
@@ -1647,11 +1678,10 @@ var musicviz = (() => {
         this.pushTrail(s[0], s[1], s[2]);
       }
       this.spin = approach(this.spin, SPIN[0] + this.in("spin") * SPIN[1], 0.3, dt);
-      this.yaw += this.spin * dt;
+      this.yaw += (this.spin + this.kick * KICK_SPIN) * dt;
       const pitch = 0.35 + Math.sin(this.t * 0.4) * 0.18;
-      this.warp = Math.max(0, this.warp - dt * WARP_DECAY);
-      const twist = TWIST[0] * Math.sin(this.t * 0.55) + TWIST[1] * this.warp;
-      const swell = 1 + PULSE * this.warp;
+      const twist = TWIST * Math.sin(this.t * 0.55);
+      const swell = 1 + PULSE * this.kick;
       const cx = this.width / 2;
       const cy = this.height / 2;
       const scale = Math.min(this.width, this.height) * SCALE;
@@ -1757,10 +1787,9 @@ var musicviz = (() => {
     static SEED = [1.1, 1.1, -0.01];
     static H = 0.06;
     static FOCAL = 9;
-    // Tuned for this system's ±4.5 extent: ~0.2 rad of corkscrew across the
-    // body at idle, opening to ~1.5 rad on a full-strength hit.
-    static TWIST = [0.045, 0.33];
-    static PULSE = 0.22;
+    // Idle corkscrew tuned for this system's ±4.5 extent: ~0.2 rad across the
+    // body at the swing's peak.
+    static TWIST = 0.045;
     derivative(x, y, z, p, out) {
       const b = p[0], w = p[1];
       out[0] = Math.sin(w * y) - b * x;
@@ -1996,6 +2025,9 @@ var musicviz = (() => {
     updateStyle(time, dt) {
       const target = { ...this.baseStyle, ...this.timeline.styleAt(time) };
       if (target.shadowColor == null) target.shadowColor = target.lineColor;
+      for (const key of Object.keys(this.style)) {
+        if (!(key in target)) delete this.style[key];
+      }
       if (this.styleDirty) {
         Object.assign(this.style, target);
         this.styleDirty = false;
@@ -2042,6 +2074,7 @@ var musicviz = (() => {
       this.syncActive(this.timeline.activeAt(frame.time));
       this.updateStyle(frame.time, dt);
       const events = this.analyzer.fired;
+      for (const data of events.values()) this.emit(`trigger:${data.name}`, data);
       const ctx = this.ctx2d;
       const w = this.canvas.clientWidth;
       const h = this.canvas.clientHeight;
@@ -2092,8 +2125,15 @@ var musicviz = (() => {
       });
       const entry = { viz, alpha: 0, leaving: false, offs: [] };
       for (const [slot, def] of Object.entries(VizClass.inputs ?? {})) {
-        if (def.kind !== "event") continue;
         const spec = bind && bind[slot] !== void 0 ? bind[slot] : def.default;
+        if (def.kind !== "event") {
+          for (const name2 of referencedTriggers(spec)) {
+            if (!this.analyzer.hasTrigger(name2)) {
+              console.warn(`MusicViz: '${id}.${slot}' references trigger '${name2}', which is not configured \u2014 its envelope will stay at 0`);
+            }
+          }
+          continue;
+        }
         const name = resolveEvent(spec, `${id}.${slot}`);
         if (!name) continue;
         if (!this.analyzer.hasTrigger(name)) {

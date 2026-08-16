@@ -22,7 +22,8 @@ import { FlowAttractor } from './attractor-base.js';
  *
  * Both are slow by nature: the ribbon only shows a new shape once the
  * trajectory has traced it, which takes about a trail-length. Beat-synced
- * motion comes from TWIST and PULSE, which deform the drawn trail directly.
+ * motion comes from the base class's rigid kick — a yaw whip plus a brief
+ * swell — which moves the whole figure at once without bending the trail.
  */
 export class Thomas extends FlowAttractor {
   static id = 'thomas';
@@ -36,10 +37,9 @@ export class Thomas extends FlowAttractor {
   static H = 0.06;
   static FOCAL = 9;
 
-  // Tuned for this system's ±4.5 extent: ~0.2 rad of corkscrew across the
-  // body at idle, opening to ~1.5 rad on a full-strength hit.
-  static TWIST = [0.045, 0.33];
-  static PULSE = 0.22;
+  // Idle corkscrew tuned for this system's ±4.5 extent: ~0.2 rad across the
+  // body at the swing's peak.
+  static TWIST = 0.045;
 
   derivative(x, y, z, p, out) {
     const b = p[0], w = p[1];

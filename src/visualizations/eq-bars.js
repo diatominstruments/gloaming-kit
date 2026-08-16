@@ -22,9 +22,11 @@ export class EQBars extends Visualization {
     const maxH = this.height * 0.75;
 
     this.applyStyle(ctx);
+    let lo = 1;   // skip the DC bin
     for (let i = 0; i < n; i++) {
-      // Log-spaced slice of the spectrum for this bar.
-      const lo = Math.floor(Math.pow(spectrum.length, i / n));
+      // Log-spaced slice of the spectrum for this bar. Each bar starts where
+      // the previous one ended and advances at least one bin — the raw log
+      // curve floors several low bars onto the same slice otherwise.
       const hi = Math.max(lo + 1, Math.floor(Math.pow(spectrum.length, (i + 1) / n)));
       let sum = 0;
       for (let j = lo; j < hi; j++) sum += spectrum[j];
@@ -41,6 +43,7 @@ export class EQBars extends Visualization {
       ctx.globalAlpha *= 0.9;
       ctx.fillRect(x, y, barW, h);
       ctx.globalAlpha /= 0.9;
+      lo = hi;
     }
   }
 }

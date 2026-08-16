@@ -23,10 +23,11 @@ export function sampleTrace(wf, segments) {
   if (!wf) return shape;
   const stride = wf.length / segments;
   for (let i = 0; i < segments; i++) {
-    // Average the slice so single-sample spikes don't dominate.
+    // Average the slice so single-sample spikes don't dominate. At least one
+    // sample per slice, or `segments > wf.length` would divide by zero.
     let sum = 0;
     const s0 = Math.floor(i * stride);
-    const s1 = Math.floor((i + 1) * stride);
+    const s1 = Math.max(s0 + 1, Math.floor((i + 1) * stride));
     for (let j = s0; j < s1; j++) sum += wf[j] - 128;
     shape[i] = sum / ((s1 - s0) * 128);
   }
@@ -41,7 +42,7 @@ export function sampleEnvelope(wf, segments) {
   for (let i = 0; i < segments; i++) {
     let sum = 0;
     const s0 = Math.floor(i * stride);
-    const s1 = Math.floor((i + 1) * stride);
+    const s1 = Math.max(s0 + 1, Math.floor((i + 1) * stride));
     for (let j = s0; j < s1; j++) {
       const v = (wf[j] - 128) / 128;
       sum += v * v;

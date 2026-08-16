@@ -3,7 +3,7 @@ import { SongPlayer } from './player.js';
 import { Analyzer, DEFAULT_TRIGGERS } from './analyzer.js';
 import { Timeline } from './timeline.js';
 import { registry } from './visualizations/index.js';
-import { resolveEvent } from './signals.js';
+import { resolveEvent, referencedTriggers } from './signals.js';
 import { easeStyle } from './style.js';
 
 const FADE_SECONDS = 0.6;
@@ -102,6 +102,13 @@ export class MusicViz extends Emitter {
     // travels with the line instead of snapping when a window changes it.
     if (target.shadowColor == null) target.shadowColor = target.lineColor;
 
+    // Drop keys that a since-ended window introduced beyond the base style:
+    // easeStyle only walks the target's keys, so nothing would ever update
+    // them again and they'd shadow the base forever.
+    for (const key of Object.keys(this.style)) {
+      if (!(key in target)) delete this.style[key];
+    }
+
     if (this.styleDirty) {
       Object.assign(this.style, target);
       this.styleDirty = false;
@@ -157,6 +164,10 @@ export class MusicViz extends Emitter {
     this.syncActive(this.timeline.activeAt(frame.time));
     this.updateStyle(frame.time, dt);
     const events = this.analyzer.fired;
+    // Re-emit this tick's triggers for app-level listeners. Sourced from the
+    // fired map rather than per-name subscriptions so setTriggers() can rename
+    // triggers without any re-wiring here.
+    for (const data of events.values()) this.emit(`trigger:${data.name}`, data);
 
     const ctx = this.ctx2d;
     const w = this.canvas.clientWidth;
@@ -213,10 +224,19 @@ export class MusicViz extends Emitter {
     const entry = { viz, alpha: 0, leaving: false, offs: [] };
 
     // Subscribe each declared event slot to whatever trigger it's bound to.
-    // Level slots need no subscription — they're polled during the frame.
+    // Level slots need no subscription — they're polled during the frame —
+    // but any envelope in them still references a trigger by name, and one
+    // that isn't configured would silently read 0 forever, so check those too.
     for (const [slot, def] of Object.entries(VizClass.inputs ?? {})) {
-      if (def.kind !== 'event') continue;
       const spec = bind && bind[slot] !== undefined ? bind[slot] : def.default;
+      if (def.kind !== 'event') {
+        for (const name of referencedTriggers(spec)) {
+          if (!this.analyzer.hasTrigger(name)) {
+            console.warn(`MusicViz: '${id}.${slot}' references trigger '${name}', which is not configured — its envelope will stay at 0`);
+          }
+        }
+        continue;
+      }
       const name = resolveEvent(spec, `${id}.${slot}`);
       if (!name) continue;
       if (!this.analyzer.hasTrigger(name)) {

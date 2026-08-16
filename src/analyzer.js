@@ -82,6 +82,7 @@ export class Analyzer extends Emitter {
   bandEnergy(lo, hi) {
     const start = Math.max(0, Math.floor(lo / this.binHz));
     const end = Math.min(this.spectrum.length - 1, Math.ceil(hi / this.binHz));
+    if (end < start) return 0;   // band lies entirely above Nyquist
     let sum = 0;
     for (let i = start; i <= end; i++) sum += this.spectrum[i];
     return sum / ((end - start + 1) * 255);
@@ -111,12 +112,17 @@ export class Analyzer extends Emitter {
 
     this.fired.clear();
     for (const t of this.triggers) {
+      // lastFired is in song time, so a backwards seek leaves it ahead of the
+      // clock — which would hold the cooldown closed until playback re-passed
+      // the old fire point.
+      if (t.lastFired > time) t.lastFired = -Infinity;
       const energy = this.bandEnergy(t.band[0], t.band[1]);
       const rising = energy > t.prevEnergy;
       const offCooldown = time - t.lastFired >= t.cooldown;
       if (energy >= t.threshold && rising && offCooldown) {
         t.lastFired = time;
-        const strength = Math.min(1, (energy - t.threshold) / (1 - t.threshold));
+        const range = 1 - t.threshold;
+        const strength = range > 0 ? Math.min(1, (energy - t.threshold) / range) : 1;
         const data = { name: t.name, time, energy, strength };
         this.fired.set(t.name, data);
         this.emit(`trigger:${t.name}`, data);
