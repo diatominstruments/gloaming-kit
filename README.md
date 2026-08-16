@@ -54,6 +54,18 @@ Or from the bundle, via the global:
 const { GloamingKit, registry, VIZ, TRIGGER, Visualization, register } = gloamingKit;
 ```
 
+Importing from source, IDEs infer everything and autocomplete works out of
+the box (`VIZ.` lists every visualization). The global does **not** get this:
+a classic `<script>` declares nothing to the language service, so `musicviz`
+is implicitly `any` and completion goes silent. A JSDoc cast restores it —
+no TypeScript build required, IDEs read the annotation as-is:
+
+```js
+const { MusicViz, VIZ } = /** @type {import('./src/engine.js')} */ (musicviz);
+```
+
+(Adjust the path to wherever the source lives relative to your script.)
+
 ## Architecture
 
 ```
