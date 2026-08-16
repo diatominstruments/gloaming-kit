@@ -5,7 +5,7 @@
  * library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { MusicViz, registry } = musicviz;
+  const { MusicViz, registry, VIZ } = musicviz;
 
   const canvas = document.getElementById('stage');
 
@@ -19,27 +19,27 @@
       shadowBlur: 14,
     },
     timeline: [
-      { from: 0, to: 11, visualizations: ['road'] },
-      { from: 11, to: 22, visualizations: ['tunnel'] },
-      { from: 22, to: 32, visualizations: ['starfield'] },
+      { from: 0, to: 11, visualizations: [VIZ.ROAD] },
+      { from: 11, to: 22, visualizations: [VIZ.TUNNEL] },
+      { from: 22, to: 32, visualizations: [VIZ.STARFIELD] },
       // Window styles override the base style while they run, and the engine
       // interpolates into and out of them.
       {
         from: 32, to: 43,
-        visualizations: ['lightning'],
+        visualizations: [VIZ.LIGHTNING],
         style: { lineColor: '#a9c9ff', accentColor: '#fff4b8', background: '#05060f' },
       },
       {
         from: 43, to: 54,
-        visualizations: ['attractor'],
+        visualizations: [VIZ.ATTRACTOR],
         style: { lineColor: '#ff9d5c', accentColor: '#ffe08a', background: '#120a06' },
       },
       // Same visualization, rewired: its ring bursts follow the hihat and its
       // core breathes with treble instead of bass.
       { from: 54, to: 64, visualizations: [
-        { id: 'radial-burst', bind: { ring: 'hihat', core: 'treble' } },
+        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: 'treble' } },
       ] },
-      { from: 64, to: Infinity, visualizations: ['harmonograph', 'particles'] },
+      { from: 64, to: Infinity, visualizations: [VIZ.HARMONOGRAPH, VIZ.PARTICLES] },
     ],
   });
   window.addEventListener('resize', () => viz.resize());

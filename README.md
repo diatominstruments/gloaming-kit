@@ -45,13 +45,13 @@ decode via the file picker.
 As ES modules, straight from source, no build:
 
 ```js
-import { MusicViz, TRIGGER } from './src/engine.js';
+import { MusicViz, VIZ, TRIGGER } from './src/engine.js';
 ```
 
 Or from the bundle, via the global:
 
 ```js
-const { MusicViz, registry, TRIGGER, Visualization, register } = musicviz;
+const { MusicViz, registry, VIZ, TRIGGER, Visualization, register } = musicviz;
 ```
 
 ## Architecture
@@ -87,7 +87,7 @@ SongPlayer ──▶ Analyzer ──▶ MusicViz engine ──▶ active Visuali
 ## Usage
 
 ```js
-import { MusicViz, TRIGGER } from './src/engine.js';
+import { MusicViz, VIZ, TRIGGER } from './src/engine.js';
 
 const viz = new MusicViz({
   canvas: document.querySelector('canvas'),
@@ -99,14 +99,16 @@ const viz = new MusicViz({
     shadowBlur: 14,        // glow; shadowColor defaults to lineColor
   },
   timeline: [
-    { from: 0,  to: 60, visualizations: ['eq-bars'] },
+    // Ids are plain strings; VIZ holds them as constants so the full list
+    // shows up in IDE completion.
+    { from: 0,  to: 60, visualizations: [VIZ.EQ_BARS] },
     {
       from: 60, to: Infinity,
       visualizations: [
-        'waveform',
+        VIZ.WAVEFORM,
         // Rewire this instance: rings follow the hihat, the core breathes
         // with treble. Slots left out keep their defaults.
-        { id: 'radial-burst', bind: { ring: 'hihat', core: 'treble' } },
+        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: 'treble' } },
       ],
       // Partial override of the base style, eased in and out.
       style: { lineColor: '#ffb347', background: '#120a06' },

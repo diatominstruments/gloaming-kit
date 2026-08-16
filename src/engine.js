@@ -244,5 +244,5 @@ export class MusicViz extends Emitter {
 }
 
 export { Visualization } from './visualizations/base.js';
-export { register, registry } from './visualizations/index.js';
+export { register, registry, VIZ } from './visualizations/index.js';
 export { BANDS, TRIGGER, DEFAULT_TRIGGERS } from './analyzer.js';

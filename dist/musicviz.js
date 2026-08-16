@@ -24,6 +24,7 @@ var musicviz = (() => {
     DEFAULT_TRIGGERS: () => DEFAULT_TRIGGERS,
     MusicViz: () => MusicViz,
     TRIGGER: () => TRIGGER,
+    VIZ: () => VIZ,
     Visualization: () => Visualization,
     register: () => register,
     registry: () => registry
@@ -1868,6 +1869,23 @@ var musicviz = (() => {
       Thomas
     ].map((V) => [V.id, V])
   );
+  var VIZ = Object.freeze({
+    EQ_BARS: EQBars.id,
+    WAVEFORM: Waveform.id,
+    RADIAL_BURST: RadialBurst.id,
+    POLYGON_PULSE: PolygonPulse.id,
+    PARTICLES: ParticleField.id,
+    ROAD: Road.id,
+    TUNNEL: Tunnel.id,
+    ROLLING_BALL: RollingBall.id,
+    STARFIELD: Starfield.id,
+    LIGHTNING: Lightning.id,
+    HARMONOGRAPH: Harmonograph.id,
+    ATTRACTOR: DeJong.id,
+    CLIFFORD: Clifford.id,
+    BEDHEAD: Bedhead.id,
+    THOMAS: Thomas.id
+  });
   function register(VizClass) {
     registry.set(VizClass.id, VizClass);
   }

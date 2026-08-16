@@ -24,6 +24,34 @@ export const registry = new Map(
   ].map((V) => [V.id, V]),
 );
 
+/**
+ * Timeline ids as constants, so app code can write `VIZ.ROAD` instead of a
+ * bare string and get the full list from IDE completion:
+ *
+ *   { from: 0, to: 20, visualizations: [VIZ.ROAD, VIZ.PARTICLES] }
+ *
+ * Values are read off each class's `id`, not repeated as literals, so an id
+ * rename can't leave this table silently stale. Covers the built-ins only —
+ * a class added via register() names its own id.
+ */
+export const VIZ = Object.freeze({
+  EQ_BARS: EQBars.id,
+  WAVEFORM: Waveform.id,
+  RADIAL_BURST: RadialBurst.id,
+  POLYGON_PULSE: PolygonPulse.id,
+  PARTICLES: ParticleField.id,
+  ROAD: Road.id,
+  TUNNEL: Tunnel.id,
+  ROLLING_BALL: RollingBall.id,
+  STARFIELD: Starfield.id,
+  LIGHTNING: Lightning.id,
+  HARMONOGRAPH: Harmonograph.id,
+  ATTRACTOR: DeJong.id,
+  CLIFFORD: Clifford.id,
+  BEDHEAD: Bedhead.id,
+  THOMAS: Thomas.id,
+});
+
 /** Register a custom visualization class (must have a static `id`). */
 export function register(VizClass) {
   registry.set(VizClass.id, VizClass);
