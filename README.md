@@ -62,8 +62,11 @@ SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visu
   transport)     triggers)      routing, style)        slots)
 ```
 
-- **SongPlayer** ([src/player.js](src/player.js)) — decodes a URL or `File`
-  into an `AudioBuffer`, handles play/pause/seek, exposes an output `GainNode`.
+- **SongPlayer** ([src/player.js](src/player.js)) — feeds audio into the graph
+  and exposes transport. Takes a URL, a `File`/`Blob`, an `<audio>` element or
+  a bare `AudioNode`; everything reaches the speakers through an output
+  `GainNode` that the Analyzer taps, so the rest of the system is indifferent
+  to which kind of source is upstream.
 - **Analyzer** ([src/analyzer.js](src/analyzer.js)) — taps the player through
   an `AnalyserNode`. Each tick it emits a `frame` event with coarse band
   energies (`subBass`, `bass`, `lowMid`, `mid`, `highMid`, `treble`, each
@@ -123,7 +126,7 @@ const viz = new GloamingKit({
   ],
 });
 
-await viz.load(fileOrUrl);   // File/Blob or URL string
+await viz.load(source);      // see "Audio sources" below
 viz.play();                  // must follow a user gesture (autoplay policy)
 
 viz.setStyle({ lineColor: '#ffcc00' });   // updates the base style
@@ -131,6 +134,63 @@ viz.setTimeline([...]);                   // live-updates the schedule
 viz.setTriggers([...]);                   // redefine trigger bands/thresholds
 viz.resize();                             // call on window resize
 viz.on('trigger:bass', ({ strength }) => { /* app-level reactions */ });
+```
+
+## Audio sources
+
+`load()` accepts four things, and picks its strategy from what it's given:
+
+| passed | how it plays | transport |
+|--------|--------------|-----------|
+| URL string | fetched, decoded to an `AudioBuffer` | full |
+| `File` / `Blob` | decoded, no network | full |
+| `HTMLMediaElement` | `MediaElementAudioSourceNode`, streamed | delegated to the element |
+| `AudioNode` | connected as-is | none |
+
+```js
+await viz.load('song.wav');                          // URL
+await viz.load(fileInput.files[0]);                  // picker
+await viz.load(document.querySelector('audio'));     // <audio> element
+await viz.load(micStreamNode);                       // live input
+```
+
+**Which to use.** The URL path needs an `http(s)` origin, because `fetch` is
+blocked on `file://`. The `File`/`Blob` path has no such restriction, which is
+why a file picker works from disk. An `<audio>` element also loads under rules
+that permit `file://`, and streams rather than decoding up front — worth it
+for long tracks — while keeping play/pause/seek working, since the element
+owns the transport and the player mirrors its events. That means transport
+stays in sync even if something else drives the element, such as native
+`controls`.
+
+**The catch with elements:** media feeding Web Audio is subject to CORS. A
+cross-origin element without permissive headers still plays *audibly* but
+delivers silence to the graph, so every band reads zero and the visualizations
+sit dead. Same-origin, or `crossOrigin` set before the `src`, keeps the
+analyzer fed.
+
+This rules the element path out on `file://`. Chrome treats each local file as
+its own opaque origin, so an `<audio>` element pointed at a file next to the
+page is already cross-origin, and the console says so:
+
+```
+MediaElementAudioSource outputs zeroes due to CORS access restrictions
+```
+
+Over `http(s)` the element path is unaffected, and is the better choice for
+long tracks since it streams instead of decoding everything up front. For
+autoloading from disk with no server, the only routes are a `File` from a
+picker, or audio embedded in the page as a `Blob` — both bypass CORS entirely
+because no media element is involved.
+
+**Bare nodes** have no transport, so `play`/`pause`/`seek` are no-ops and
+`duration` is `Infinity`. `currentTime` reports seconds since the node was
+connected, so timeline windows still advance rather than pinning to the start.
+The node must belong to the player's `AudioContext` — either build it from
+`viz.player.ctx`, or pass your own context to the engine:
+
+```js
+const viz = new MusicViz({ canvas, audioContext: myCtx, timeline: [...] });
 ```
 
 ## Built-in visualizations

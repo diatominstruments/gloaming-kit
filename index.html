@@ -70,38 +70,11 @@
     #song-name { color: var(--muted); font-size: 12px; word-break: break-all; }
     input[type="file"] { display: none; }
   </style>
+  <audio id="song" src="sound2.wav" preload="auto"></audio>
 </head>
 <body>
+  <button id="play">Play</button>
   <canvas id="stage"></canvas>
-
-  <div id="transport">
-    <button id="play" class="primary" disabled>Play</button>
-    <input id="seek" type="range" min="0" max="0" step="0.1" value="0">
-    <span id="clock">0:00 / 0:00</span>
-  </div>
-
-  <aside>
-    <h1>GloamingKit</h1>
-    <div id="song-name">No song loaded</div>
-
-    <h2>Song</h2>
-    <div class="row">
-      <button id="pick-song">Choose file…</button>
-      <button id="demo-song">Demo track</button>
-      <input id="file-input" type="file" accept="audio/*">
-    </div>
-
-    <h2>Style</h2>
-    <div class="row"><label for="st-bg">Background</label><input id="st-bg" type="color" value="#0a0a12"></div>
-    <div class="row"><label for="st-line">Line color</label><input id="st-line" type="color" value="#7fffd4"></div>
-    <div class="row"><label for="st-accent">Accent color</label><input id="st-accent" type="color" value="#ff5d8f"></div>
-    <div class="row"><label for="st-width">Line width</label><input id="st-width" type="range" min="1" max="8" step="0.5" value="2"></div>
-    <div class="row"><label for="st-glow">Glow</label><input id="st-glow" type="range" min="0" max="40" step="1" value="14"></div>
-
-    <h2>Timeline</h2>
-    <div id="timeline"></div>
-    <button id="add-window">+ Add window</button>
-  </aside>
 
   <!-- Library first, then the demo app that consumes it. Both are classic
        scripts, so this page also works opened straight from disk. -->

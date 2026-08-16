@@ -47,6 +47,161 @@ var gloamingKit = (() => {
   };
 
   // src/player.js
+  var isMediaElement = (v) => typeof HTMLMediaElement !== "undefined" && v instanceof HTMLMediaElement;
+  var isAudioNode = (v) => typeof AudioNode !== "undefined" && v instanceof AudioNode;
+  var elementSources = /* @__PURE__ */ new WeakMap();
+  var whenMetadata = (el) => new Promise((resolve, reject) => {
+    if (el.readyState >= 1) return resolve();
+    el.addEventListener("loadedmetadata", () => resolve(), { once: true });
+    el.addEventListener("error", () => {
+      reject(new Error(`SongPlayer: media element failed to load (${el.currentSrc || el.src})`));
+    }, { once: true });
+  });
+  var BufferSource = class {
+    constructor(player, buffer) {
+      this.player = player;
+      this.buffer = buffer;
+      this.node = null;
+      this.startedAt = 0;
+      this.offset = 0;
+      this.active = false;
+    }
+    get duration() {
+      return this.buffer.duration;
+    }
+    get playing() {
+      return this.active;
+    }
+    get currentTime() {
+      if (!this.active) return this.offset;
+      return Math.min(this.offset + (this.player.ctx.currentTime - this.startedAt), this.duration);
+    }
+    play() {
+      if (this.active) return;
+      const { ctx, output } = this.player;
+      this.node = ctx.createBufferSource();
+      this.node.buffer = this.buffer;
+      this.node.connect(output);
+      this.node.onended = () => {
+        if (this.active && this.currentTime >= this.duration - 0.05) {
+          this.active = false;
+          this.offset = 0;
+          this.player.emit("ended");
+        }
+      };
+      this.node.start(0, this.offset);
+      this.startedAt = ctx.currentTime;
+      this.active = true;
+      this.player.emit("play");
+    }
+    pause() {
+      if (!this.active) return;
+      this.offset = this.currentTime;
+      this.stopNode();
+      this.player.emit("pause");
+    }
+    seek(time) {
+      const wasPlaying = this.active;
+      this.offset = Math.max(0, Math.min(time, this.duration));
+      if (wasPlaying) {
+        this.stopNode();
+        this.play();
+      }
+      this.player.emit("seek", { time: this.offset });
+    }
+    /** Tear down the current source node without emitting events. */
+    stopNode() {
+      if (!this.node) return;
+      this.active = false;
+      try {
+        this.node.stop();
+      } catch {
+      }
+      this.node.disconnect();
+      this.node = null;
+    }
+    teardown() {
+      this.stopNode();
+    }
+  };
+  var ElementSource = class {
+    constructor(player, el) {
+      this.player = player;
+      this.el = el;
+      let node = elementSources.get(el);
+      if (!node) {
+        node = player.ctx.createMediaElementSource(el);
+        elementSources.set(el, node);
+      }
+      this.node = node;
+      node.connect(player.output);
+      this.listeners = {
+        play: () => player.emit("play"),
+        pause: () => player.emit("pause"),
+        ended: () => player.emit("ended"),
+        seeked: () => player.emit("seek", { time: el.currentTime })
+      };
+      for (const [event, fn] of Object.entries(this.listeners)) el.addEventListener(event, fn);
+    }
+    get duration() {
+      const d = this.el.duration;
+      return Number.isNaN(d) ? 0 : d;
+    }
+    get playing() {
+      return !this.el.paused && !this.el.ended;
+    }
+    get currentTime() {
+      return this.el.currentTime;
+    }
+    play() {
+      const started = this.el.play();
+      if (started?.catch) started.catch((err) => console.warn("SongPlayer: play rejected", err));
+    }
+    pause() {
+      this.el.pause();
+    }
+    seek(time) {
+      const max = Number.isFinite(this.duration) ? this.duration : time;
+      this.el.currentTime = Math.max(0, Math.min(time, max));
+    }
+    teardown() {
+      for (const [event, fn] of Object.entries(this.listeners)) {
+        this.el.removeEventListener(event, fn);
+      }
+      this.node.disconnect(this.player.output);
+    }
+  };
+  var LiveSource = class {
+    constructor(player, node) {
+      if (node.context !== player.ctx) {
+        throw new Error(
+          "SongPlayer: node belongs to a different AudioContext. Build it with the player's context (viz.player.ctx), or pass that context to MusicViz as `audioContext`."
+        );
+      }
+      this.player = player;
+      this.node = node;
+      this.startedAt = player.ctx.currentTime;
+      node.connect(player.output);
+    }
+    get duration() {
+      return Infinity;
+    }
+    get playing() {
+      return true;
+    }
+    get currentTime() {
+      return this.player.ctx.currentTime - this.startedAt;
+    }
+    play() {
+    }
+    pause() {
+    }
+    seek() {
+    }
+    teardown() {
+      this.node.disconnect(this.player.output);
+    }
+  };
   var SongPlayer = class extends Emitter {
     constructor(audioContext) {
       super();
@@ -60,21 +215,27 @@ var gloamingKit = (() => {
       this.playing = false;
       this.playToken = 0;
     }
-    /** Accepts a URL string or a File/Blob (e.g. from an <input type="file">). */
     async load(song) {
-      this.stop();
-      const arrayBuffer = song instanceof Blob ? await song.arrayBuffer() : await (await fetch(song)).arrayBuffer();
-      this.buffer = await this.ctx.decodeAudioData(arrayBuffer);
-      this.offset = 0;
-      this.emit("load", { duration: this.buffer.duration });
+      this.teardown();
+      if (isMediaElement(song)) {
+        this.source = new ElementSource(this, song);
+        await whenMetadata(song);
+      } else if (isAudioNode(song)) {
+        this.source = new LiveSource(this, song);
+      } else {
+        const arrayBuffer = song instanceof Blob ? await song.arrayBuffer() : await (await fetch(song)).arrayBuffer();
+        this.source = new BufferSource(this, await this.ctx.decodeAudioData(arrayBuffer));
+      }
+      this.emit("load", { duration: this.duration });
     }
     get duration() {
-      return this.buffer?.duration ?? 0;
+      return this.source?.duration ?? 0;
     }
-    /** Current playback position in seconds. */
     get currentTime() {
-      if (!this.playing) return this.offset;
-      return Math.min(this.offset + (this.ctx.currentTime - this.startedAt), this.duration);
+      return this.source?.currentTime ?? 0;
+    }
+    get playing() {
+      return this.source?.playing ?? false;
     }
     async play() {
       if (!this.buffer || this.playing) return;
@@ -102,19 +263,10 @@ var gloamingKit = (() => {
       this.emit("play");
     }
     pause() {
-      if (!this.playing) return;
-      this.offset = this.currentTime;
-      this.stop();
-      this.emit("pause");
+      this.source?.pause();
     }
     seek(time) {
-      const wasPlaying = this.playing;
-      this.offset = Math.max(0, Math.min(time, this.duration));
-      if (wasPlaying) {
-        this.stop();
-        this.play();
-      }
-      this.emit("seek", { time: this.offset });
+      this.source?.seek(time);
     }
     /** Tear down the current source node without emitting events. */
     stop() {
@@ -1971,7 +2123,8 @@ var gloamingKit = (() => {
       style = {},
       timeline = [],
       triggers = DEFAULT_TRIGGERS,
-      styleFade = STYLE_TAU
+      styleFade = STYLE_TAU,
+      audioContext
     } = {}) {
       super();
       this.canvas = canvas;
@@ -1988,7 +2141,7 @@ var gloamingKit = (() => {
       this.style = { ...this.baseStyle };
       this.styleFade = styleFade;
       this.styleDirty = true;
-      this.player = new SongPlayer();
+      this.player = new SongPlayer(audioContext);
       this.analyzer = new Analyzer(this.player, { triggers });
       this.timeline = new Timeline(timeline);
       this.active = /* @__PURE__ */ new Map();

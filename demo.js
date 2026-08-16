@@ -8,182 +8,39 @@
   const { GloamingKit, registry, VIZ } = gloamingKit;
 
   const canvas = document.getElementById('stage');
+  const playBtn = document.getElementById('play');
 
   const viz = new GloamingKit({
     canvas,
     style: {
       background: '#0a0a12',
-      lineColor: '#7fffd4',
-      accentColor: '#ff5d8f',
-      lineWidth: 2,
+      lineColor: '#fffd7f',
+      accentColor: '#fc3373',
+      lineWidth: 1,
       shadowBlur: 14,
     },
     timeline: [
-      { from: 0, to: 11, visualizations: [VIZ.ROAD] },
-      { from: 11, to: 22, visualizations: [VIZ.TUNNEL] },
-      { from: 22, to: 32, visualizations: [VIZ.STARFIELD] },
-      // Window styles override the base style while they run, and the engine
-      // interpolates into and out of them.
-      {
-        from: 32, to: 43,
-        visualizations: [VIZ.LIGHTNING],
-        style: { lineColor: '#a9c9ff', accentColor: '#fff4b8', background: '#05060f' },
-      },
-      {
-        from: 43, to: 54,
-        visualizations: [VIZ.ATTRACTOR],
-        style: { lineColor: '#ff9d5c', accentColor: '#ffe08a', background: '#120a06' },
-      },
-      // Same visualization, rewired: its ring bursts follow the hihat and its
-      // core breathes with treble instead of bass.
-      { from: 54, to: 64, visualizations: [
-        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: 'treble' } },
-      ] },
-      { from: 64, to: Infinity, visualizations: [VIZ.HARMONOGRAPH, VIZ.PARTICLES] },
+      { from: 0, to: 13, visualizations: ['attractor'] },
+      { from: 13, to: 25, visualizations: ['attractor', 'starfield'] },
+      { from: 25, to: 38, visualizations: ['attractor', 'starfield'], style: { lineWidth: 2, accentColor: '#8d00f9' } },
+      { from: 38, to: 51, visualizations: ['starfield'] },
+      { from: 51, to: 64, visualizations: ['attractor', 'road', 'particles'] },
+      { from: 64, to: 77, visualizations: ['attractor', 'road', 'particles'] },
+      { from: 77, to: 102, visualizations: ['lightning', 'radial-burst', 'thomas'] },
+      { from: 102, to: 128, visualizations: ['starfield', 'bedhead'] },
+      { from: 128, to: 142, visualizations: ['road', 'particles'] },
+      { from: 142, to: 153, visualizations: ['road', 'particles', 'tunnel', 'attractor'], style: { lineWidth: 1, lineColor: '#0cf800' } },
+      { from: 153, to: 179, visualizations: ['tunnel', 'attractor'] },
+      { from: 179, to: Infinity, visualizations: ['attractor'] },
     ],
   });
   window.addEventListener('resize', () => viz.resize());
+  playBtn.addEventListener('click', () => async () => {
+    await viz.load('sound2.wav');
+    viz.player.playing ? viz.pause() : viz.play()
+  });
   window.viz = viz; // console access for debugging/experimentation
-
-  // ---- transport -----------------------------------------------------------
-
-  const playBtn = document.getElementById('play');
-  const seek = document.getElementById('seek');
-  const clock = document.getElementById('clock');
-  const songName = document.getElementById('song-name');
-
-  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-  let scrubbing = false;
-
-  viz.on('load', ({ duration }) => {
-    playBtn.disabled = false;
-    seek.max = duration;
-    clock.textContent = `0:00 / ${fmt(duration)}`;
-  });
-  viz.on('play', () => (playBtn.textContent = 'Pause'));
-  viz.on('pause', () => (playBtn.textContent = 'Play'));
-  viz.on('ended', () => (playBtn.textContent = 'Play'));
-  viz.on('frame', ({ time }) => {
-    if (!scrubbing) seek.value = time;
-    clock.textContent = `${fmt(time)} / ${fmt(viz.player.duration)}`;
-  });
-
-  playBtn.addEventListener('click', () => (viz.player.playing ? viz.pause() : viz.play()));
-  seek.addEventListener('input', () => (scrubbing = true));
-  seek.addEventListener('change', () => {
-    viz.seek(parseFloat(seek.value));
-    scrubbing = false;
-  });
-
-  // ---- song loading --------------------------------------------------------
-
-  const fileInput = document.getElementById('file-input');
-  document.getElementById('pick-song').addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-    await viz.load(file);
-    songName.textContent = file.name;
-  });
-  document.getElementById('demo-song').addEventListener('click', async () => {
-    try {
-      await viz.load('demo-track.wav');
-      songName.textContent = 'demo-track.wav (generated)';
-    } catch {
-      // fetch() is blocked when the page is opened via file:// — picker still works.
-      songName.textContent = 'Demo track needs a local server — use "Choose file…" instead';
-    }
-  });
-
-  // ---- style controls ------------------------------------------------------
-
-  const bindControl = (id, key, parse = (v) => v) => {
-    const el = document.getElementById(id);
-    el.addEventListener('input', () => viz.setStyle({ [key]: parse(el.value) }));
-  };
-  bindControl('st-bg', 'background');
-  bindControl('st-line', 'lineColor');
-  bindControl('st-accent', 'accentColor');
-  bindControl('st-width', 'lineWidth', parseFloat);
-  bindControl('st-glow', 'shadowBlur', parseFloat);
-
-  // ---- timeline editor -----------------------------------------------------
-
-  const timelineEl = document.getElementById('timeline');
-  const vizNames = [...registry.keys()];
-  let windows = viz.timeline.windows.map((w) => ({
-    ...w,
-    visualizations: w.visualizations.map((e) => ({ ...e })),
-  }));
-
-  function apply() {
-    viz.setTimeline(windows);
-  }
-
-  function renderTimeline() {
-    timelineEl.innerHTML = '';
-    windows.forEach((w, i) => {
-      const div = document.createElement('div');
-      div.className = 'tl-window';
-
-      const remove = document.createElement('button');
-      remove.className = 'tl-remove';
-      remove.textContent = '✕';
-      remove.addEventListener('click', () => {
-        windows.splice(i, 1);
-        renderTimeline();
-        apply();
-      });
-      div.appendChild(remove);
-
-      const times = document.createElement('div');
-      times.className = 'row';
-      for (const key of ['from', 'to']) {
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.min = 0;
-        input.value = Number.isFinite(w[key]) ? w[key] : '';
-        input.placeholder = key === 'to' ? 'end' : '0';
-        input.addEventListener('change', () => {
-          w[key] = input.value === '' ? (key === 'to' ? Infinity : 0) : parseFloat(input.value);
-          apply();
-        });
-        const label = document.createElement('label');
-        label.textContent = `${key} (s)`;
-        times.append(label, input);
-      }
-      div.appendChild(times);
-
-      const vizzes = document.createElement('div');
-      vizzes.className = 'tl-vizzes';
-      for (const name of vizNames) {
-        const label = document.createElement('label');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = w.visualizations.some((e) => e.id === name);
-        cb.addEventListener('change', () => {
-          // Entries carry a `bind` alongside the id; unchecking drops any
-          // custom routing with them, which is what the checkbox implies.
-          w.visualizations = cb.checked
-            ? [...w.visualizations, { id: name, bind: null }]
-            : w.visualizations.filter((e) => e.id !== name);
-          apply();
-        });
-        label.append(cb, name);
-        vizzes.appendChild(label);
-      }
-      div.appendChild(vizzes);
-      timelineEl.appendChild(div);
-    });
-  }
-
-  document.getElementById('add-window').addEventListener('click', () => {
-    const last = windows[windows.length - 1];
-    const from = last && Number.isFinite(last.to) ? last.to : 0;
-    windows.push({ from, to: Infinity, visualizations: [{ id: vizNames[0], bind: null }] });
-    renderTimeline();
-    apply();
-  });
-
-  renderTimeline();
+  const sound = new Audio(document.getElementById('song').src);
+  viz.load(sound);
 })();
+  
