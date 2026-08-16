@@ -562,58 +562,158 @@ var musicviz = (() => {
   };
 
   // src/visualizations/particles.js
-  var ParticleField = class extends Visualization {
+  var ParticleField = class _ParticleField extends Visualization {
     static id = "particles";
     static inputs = {
       shove: { kind: "event", default: TRIGGER.BASS },
       twinkle: { kind: "level", default: "treble" }
     };
+    static COUNT = 110;
+    // A critically damped spring absorbs an impulse in roughly 1/OMEGA seconds
+    // and lets it travel about v/(e*OMEGA) px, so OMEGA sets both how far a hit
+    // throws the field and how long it takes to settle. Stiff values swallow
+    // the shove before the eye catches it; this is soft enough that the field
+    // is still moving when the next beat lands.
+    static OMEGA = 3.2;
+    // spring rate back to the drift point, rad/s
+    static SHOVE = 460;
+    // px/s of outward impulse at full strength
+    static SWIRL = 0.35;
+    // of the shove applied tangentially, so a hit
+    // blooms rather than detonating in a clean ring
+    static DRIFT = 16;
+    // px/s of slow wandering
+    static TRAIL = 0.07;
+    // seconds of motion drawn behind each mote
+    static MAX_TRAIL = 110;
+    // px, so a heavy hit can't streak across the page
+    static HEAT_SPEED = 400;
+    // px/s that counts as "fully lit"; brightness
+    // rides speed so the hit itself is what flashes
+    static HOT = 0.45;
+    // heat above which a mote burns accent-coloured
+    static MIN_TRAIL = 0.5;
+    // px; a round-capped stub is how a still mote
+    // renders as a dot, and zero-length subpaths are
+    // not reliably drawn
     constructor(opts) {
       super(opts);
-      this.particles = Array.from({ length: 90 }, () => this.spawn());
+      this.particles = Array.from({ length: _ParticleField.COUNT }, () => this.spawn());
     }
     spawn() {
+      const { DRIFT } = _ParticleField;
+      const x = Math.random() * this.width;
+      const y = Math.random() * this.height;
       return {
-        x: Math.random() * this.width,
-        y: Math.random() * this.height,
-        vx: (Math.random() - 0.5) * 12,
-        vy: (Math.random() - 0.5) * 12,
+        x,
+        y,
+        // live position
+        hx: x,
+        hy: y,
+        // home: where it drifts, and springs back to
+        hvx: (Math.random() - 0.5) * DRIFT * 2,
+        hvy: (Math.random() - 0.5) * DRIFT * 2,
+        vx: 0,
+        vy: 0,
         size: 1 + Math.random() * 2.5,
-        phase: Math.random() * Math.PI * 2
+        phase: Math.random() * Math.PI * 2,
+        // Per-mote gain and swirl direction, so a hit scatters the field
+        // unevenly instead of moving it as one rigid shell.
+        respond: 0.55 + Math.random() * 0.9,
+        swirl: Math.random() < 0.5 ? -1 : 1,
+        ax: x,
+        ay: y,
+        alpha: 0,
+        lw: 1
+        // streak tail + per-mote draw state
       };
     }
     onInput(slot, { strength }) {
+      if (slot !== "shove") return;
+      const { SHOVE, SWIRL } = _ParticleField;
       const cx = this.width / 2;
       const cy = this.height / 2;
       for (const p of this.particles) {
         const dx = p.x - cx;
         const dy = p.y - cy;
         const d = Math.hypot(dx, dy) || 1;
-        const kick = 60 + strength * 160;
-        p.vx += dx / d * kick;
-        p.vy += dy / d * kick;
+        const kick = SHOVE * (0.3 + strength * 0.7) * p.respond;
+        p.vx += (dx / d + -dy / d * SWIRL * p.swirl) * kick;
+        p.vy += (dy / d + dx / d * SWIRL * p.swirl) * kick;
       }
     }
     draw(ctx, dt) {
+      const { OMEGA, TRAIL, MAX_TRAIL, MIN_TRAIL, HEAT_SPEED, HOT } = _ParticleField;
       const treble = this.in("twinkle");
+      const w = this.width;
+      const h = this.height;
+      const decay = Math.exp(-OMEGA * dt);
+      const baseAlpha = ctx.globalAlpha;
       this.applyStyle(ctx);
+      ctx.lineCap = "round";
+      const glow = new Path2D();
       for (const p of this.particles) {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.vx -= p.vx * dt * 1.8;
-        p.vy -= p.vy * dt * 1.8;
-        if (p.x < 0) p.x += this.width;
-        if (p.x > this.width) p.x -= this.width;
-        if (p.y < 0) p.y += this.height;
-        if (p.y > this.height) p.y -= this.height;
-        p.phase += dt * (1 + treble * 12);
-        const twinkle = 0.45 + 0.55 * Math.sin(p.phase);
-        ctx.globalAlpha *= 0.25 + twinkle * (0.3 + treble * 0.45);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * (1 + treble), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha /= 0.25 + twinkle * (0.3 + treble * 0.45);
+        p.hx += p.hvx * dt;
+        p.hy += p.hvy * dt;
+        if (p.hx < 0) {
+          p.hx = 0;
+          p.hvx = Math.abs(p.hvx);
+        } else if (p.hx > w) {
+          p.hx = w;
+          p.hvx = -Math.abs(p.hvx);
+        }
+        if (p.hy < 0) {
+          p.hy = 0;
+          p.hvy = Math.abs(p.hvy);
+        } else if (p.hy > h) {
+          p.hy = h;
+          p.hvy = -Math.abs(p.hvy);
+        }
+        let ch = p.x - p.hx;
+        let tmp = (p.vx + OMEGA * ch) * dt;
+        p.vx = (p.vx - OMEGA * tmp) * decay;
+        p.x = p.hx + (ch + tmp) * decay;
+        ch = p.y - p.hy;
+        tmp = (p.vy + OMEGA * ch) * dt;
+        p.vy = (p.vy - OMEGA * tmp) * decay;
+        p.y = p.hy + (ch + tmp) * decay;
+        const speed = Math.hypot(p.vx, p.vy);
+        let tx = -p.vx * TRAIL;
+        let ty = -p.vy * TRAIL;
+        const len = Math.hypot(tx, ty);
+        if (len > MAX_TRAIL) {
+          tx = tx / len * MAX_TRAIL;
+          ty = ty / len * MAX_TRAIL;
+        } else if (len < MIN_TRAIL) {
+          tx = MIN_TRAIL;
+          ty = 0;
+        }
+        p.ax = p.x + tx;
+        p.ay = p.y + ty;
+        p.phase += dt * (0.6 + treble * 6);
+        const shimmer = 0.5 + 0.5 * Math.sin(p.phase);
+        const heat = Math.min(1, speed / HEAT_SPEED);
+        p.hot = heat > HOT;
+        p.alpha = Math.min(1, 0.18 + shimmer * (0.22 + treble * 0.5) + heat * 0.55);
+        p.lw = p.size * (1 + treble * 0.8 + heat * 0.5);
+        glow.moveTo(p.ax, p.ay);
+        glow.lineTo(p.x, p.y);
       }
+      ctx.globalAlpha = baseAlpha * (0.1 + treble * 0.18);
+      ctx.lineWidth = (this.style.lineWidth ?? 2) * 1.6;
+      ctx.stroke(glow);
+      ctx.shadowBlur = 0;
+      const accent = this.style.accentColor ?? this.style.lineColor;
+      for (const p of this.particles) {
+        ctx.strokeStyle = p.hot ? accent : this.style.lineColor;
+        ctx.globalAlpha = baseAlpha * p.alpha;
+        ctx.lineWidth = p.lw;
+        ctx.beginPath();
+        ctx.moveTo(p.ax, p.ay);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = baseAlpha;
     }
   };
 
