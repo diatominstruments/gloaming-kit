@@ -1,0 +1,12 @@
+{
+  "name": "musicviz",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "esbuild src/engine.js --bundle --format=iife --global-name=musicviz --outfile=dist/musicviz.js --sourcemap",
+    "watch": "npm run build -- --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

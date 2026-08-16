@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicViz</title>
+  <style>
+    :root {
+      --bg: #14141c;
+      --panel: #1d1d29;
+      --text: #e8e8f0;
+      --muted: #8a8aa0;
+      --accent: #7fffd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, sans-serif;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      grid-template-rows: 1fr auto;
+      height: 100vh;
+    }
+    #stage {
+      grid-row: 1;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    aside {
+      grid-row: 1 / 3;
+      grid-column: 2;
+      background: var(--panel);
+      padding: 16px;
+      overflow-y: auto;
+    }
+    aside h1 { font-size: 16px; margin: 0 0 4px; color: var(--accent); }
+    aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 20px 0 8px; }
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .row label { flex: 1; color: var(--muted); }
+    input[type="color"] { width: 44px; height: 28px; border: none; background: none; padding: 0; cursor: pointer; }
+    input[type="range"] { flex: 1.2; accent-color: var(--accent); }
+    input[type="number"] {
+      width: 58px; background: var(--bg); color: var(--text);
+      border: 1px solid #333344; border-radius: 4px; padding: 4px 6px;
+    }
+    button {
+      background: var(--bg); color: var(--text); border: 1px solid #333344;
+      border-radius: 6px; padding: 6px 12px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); color: #10101a; border: none; font-weight: 600; }
+    #transport {
+      grid-row: 2; grid-column: 1;
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; background: var(--panel);
+    }
+    #seek { flex: 1; accent-color: var(--accent); }
+    #clock { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 88px; text-align: right; }
+    .tl-window {
+      border: 1px solid #333344; border-radius: 8px;
+      padding: 8px; margin-bottom: 10px;
+    }
+    .tl-window .row { margin-bottom: 6px; }
+    .tl-vizzes { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .tl-vizzes label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text); }
+    .tl-remove { float: right; padding: 2px 8px; font-size: 12px; }
+    #song-name { color: var(--muted); font-size: 12px; word-break: break-all; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div id="transport">
+    <button id="play" class="primary" disabled>Play</button>
+    <input id="seek" type="range" min="0" max="0" step="0.1" value="0">
+    <span id="clock">0:00 / 0:00</span>
+  </div>
+
+  <aside>
+    <h1>MusicViz</h1>
+    <div id="song-name">No song loaded</div>
+
+    <h2>Song</h2>
+    <div class="row">
+      <button id="pick-song">Choose file…</button>
+      <button id="demo-song">Demo track</button>
+      <input id="file-input" type="file" accept="audio/*">
+    </div>
+
+    <h2>Style</h2>
+    <div class="row"><label for="st-bg">Background</label><input id="st-bg" type="color" value="#0a0a12"></div>
+    <div class="row"><label for="st-line">Line color</label><input id="st-line" type="color" value="#7fffd4"></div>
+    <div class="row"><label for="st-accent">Accent color</label><input id="st-accent" type="color" value="#ff5d8f"></div>
+    <div class="row"><label for="st-width">Line width</label><input id="st-width" type="range" min="1" max="8" step="0.5" value="2"></div>
+    <div class="row"><label for="st-glow">Glow</label><input id="st-glow" type="range" min="0" max="40" step="1" value="14"></div>
+
+    <h2>Timeline</h2>
+    <div id="timeline"></div>
+    <button id="add-window">+ Add window</button>
+  </aside>
+
+  <!-- Library first, then the demo app that consumes it. Both are classic
+       scripts, so this page also works opened straight from disk. -->
+  <script src="dist/musicviz.js" defer></script>
+  <script src="demo.js" defer></script>
+</body>
+</html>
