@@ -35,12 +35,17 @@
     ],
   });
   window.addEventListener('resize', () => viz.resize());
-  playBtn.addEventListener('click', () => async () => {
-    await viz.load('sound2.wav');
-    viz.player.playing ? viz.pause() : viz.play()
+
+  // Load the <audio> element that's already in the page — it streams rather
+  // than decoding the whole file up front, and its preload has a head start on
+  // the first click. Kicked off once here; the click just waits on it.
+  const ready = viz.load(document.getElementById('song'));
+  ready.catch((err) => console.error('demo: failed to load song', err));
+
+  playBtn.addEventListener('click', async () => {
+    await ready;
+    viz.player.playing ? viz.pause() : viz.play();
   });
   window.viz = viz; // console access for debugging/experimentation
-  const sound = new Audio(document.getElementById('song').src);
-  viz.load(sound);
 })();
   
