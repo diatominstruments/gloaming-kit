@@ -14,15 +14,15 @@
     canvas,
     style: {
       background: '#0a0a12',
-      lineColor: '#fffd7f',
+      lineColor: '#f1fe3e',
       accentColor: '#fc3373',
       lineWidth: 1,
       shadowBlur: 14,
     },
     timeline: [
       { from: 0, to: 13, visualizations: ['attractor'] },
-      { from: 13, to: 25, visualizations: ['attractor', 'starfield'] },
-      { from: 25, to: 38, visualizations: ['attractor', 'starfield'], style: { lineWidth: 2, accentColor: '#8d00f9' } },
+      { from: 13, to: 25, visualizations: ['attractor'], style: { accentColor: '#334efc' } },
+      { from: 25, to: 38, visualizations: ['attractor', 'starfield'], style: { accentColor: '#8d00f9' } },
       { from: 38, to: 51, visualizations: ['starfield'] },
       { from: 51, to: 64, visualizations: ['attractor', 'road', 'particles'] },
       { from: 64, to: 77, visualizations: ['attractor', 'road', 'particles'] },
