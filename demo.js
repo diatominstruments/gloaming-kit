@@ -9,6 +9,7 @@
 
   const canvas = document.getElementById('stage');
   const playBtn = document.getElementById('play');
+  const toggleBtn = document.getElementById('toggle');
 
   const viz = new GloamingKit({
     canvas,
@@ -42,10 +43,38 @@
   const ready = viz.load(document.getElementById('song'));
   ready.catch((err) => console.error('demo: failed to load song', err));
 
+  // The centre button only ever starts the song; from then on the corner
+  // toggle owns the transport.
+  let started = false;
   playBtn.addEventListener('click', async () => {
-    await ready;
+    if (started) return;
+    try {
+      await ready;
+    } catch {
+      return;   // load failed — leave the button up rather than stranding the page
+    }
+    started = true;
+    viz.play();
+    playBtn.classList.add('gone');
+    toggleBtn.classList.add('show');
+  });
+
+  toggleBtn.addEventListener('click', () => {
     viz.player.playing ? viz.pause() : viz.play();
   });
+
+  // Icon follows the player's own events rather than the click, so it stays
+  // right when something else moves the transport — the song ending, or the
+  // <audio> element being driven from elsewhere.
+  const showPaused = (paused) => {
+    toggleBtn.classList.toggle('paused', paused);
+    toggleBtn.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+    toggleBtn.setAttribute('title', paused ? 'Play' : 'Pause');
+  };
+  viz.on('play', () => showPaused(false));
+  viz.on('pause', () => showPaused(true));
+  viz.on('ended', () => showPaused(true));
+
   window.viz = viz; // console access for debugging/experimentation
 })();
   

@@ -18,17 +18,54 @@
       background: var(--bg);
       color: var(--text);
       font: 14px/1.45 system-ui, sans-serif;
-      display: grid;
-      grid-template-columns: 1fr 320px;
-      grid-template-rows: 1fr auto;
       height: 100vh;
+      overflow: hidden;
     }
+    /* Fixed to the viewport so the canvas is the whole page and the controls
+       float over it. viz.resize() reads clientWidth/Height, which this keeps
+       equal to the viewport. */
     #stage {
-      grid-row: 1;
+      position: fixed;
+      inset: 0;
       width: 100%;
       height: 100%;
       display: block;
     }
+
+    /* Transport: a play button in the middle that steps aside once the song
+       is running, handing over to a permanent corner toggle. Both are shown
+       and hidden with opacity rather than `display`, so the swap can animate
+       and neither ever reflows the page. */
+    #play, #toggle {
+      position: fixed;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 50%;
+      background: rgba(20, 20, 28, 0.55);
+      border: 1px solid rgba(232, 232, 240, 0.25);
+      color: var(--accent);
+      cursor: pointer;
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      transition: opacity 0.28s ease, transform 0.28s ease,
+                  background 0.2s ease, border-color 0.2s ease;
+    }
+    #play svg, #toggle svg { width: 52%; height: 52%; fill: currentColor; display: block; }
+    #play:hover, #toggle:hover { background: rgba(20, 20, 28, 0.8); border-color: var(--accent); }
+
+    #play { width: 64px; height: 64px; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    #play.gone { opacity: 0; transform: translate(-50%, -50%) scale(0.7); pointer-events: none; }
+
+    #toggle { width: 36px; height: 36px; top: 16px; left: 16px; opacity: 0; pointer-events: none; }
+    #toggle.show { opacity: 1; pointer-events: auto; }
+
+    /* One button, two glyphs — swapped by class so the icon can't drift out
+       of sync with a re-render. */
+    #toggle .i-play { display: none; }
+    #toggle.paused .i-pause { display: none; }
+    #toggle.paused .i-play { display: block; }
     aside {
       grid-row: 1 / 3;
       grid-column: 2;
@@ -73,8 +110,18 @@
   <audio id="song" src="sound2.wav" preload="auto"></audio>
 </head>
 <body>
-  <button id="play">Play</button>
   <canvas id="stage"></canvas>
+
+  <button id="play" aria-label="Play" title="Play">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+
+  <button id="toggle" aria-label="Pause" title="Pause">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path class="i-pause" d="M6 5h4v14H6zm8 0h4v14h-4z"/>
+      <path class="i-play" d="M8 5v14l11-7z"/>
+    </svg>
+  </button>
 
   <!-- Library first, then the demo app that consumes it. Both are classic
        scripts, so this page also works opened straight from disk. -->
