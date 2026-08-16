@@ -10,6 +10,8 @@
   const canvas = document.getElementById('stage');
   const playBtn = document.getElementById('play');
   const toggleBtn = document.getElementById('toggle');
+  const progress = document.getElementById('progress');
+  const progressFill = document.getElementById('progress-fill');
 
   const viz = new GloamingKit({
     canvas,
@@ -24,15 +26,18 @@
       { from: 0, to: 13, visualizations: [VIZ.ATTRACTOR] },
       { from: 13, to: 25, visualizations: [VIZ.ATTRACTOR], style: { accentColor: '#334efc' } },
       { from: 25, to: 38, visualizations: [VIZ.ATTRACTOR, VIZ.STARFIELD], style: { accentColor: '#8d00f9' } },
-      { from: 38, to: 51, visualizations: [VIZ.STARFIELD] },
+      { from: 38, to: 51, visualizations: [VIZ.STARFIELD], style: { background: '#1800f5' } },
       { from: 51, to: 64, visualizations: [VIZ.ATTRACTOR, VIZ.ROAD, VIZ.PARTICLES] },
       { from: 64, to: 77, visualizations: [VIZ.ATTRACTOR, VIZ.ROAD, VIZ.PARTICLES] },
       { from: 77, to: 102, visualizations: [VIZ.LIGHTNING, { id: VIZ.RADIAL_BURST, bind: { ring: 'treble', scatter: 'bass' } }, VIZ.THOMAS] },
-      { from: 102, to: 128, visualizations: [VIZ.STARFIELD, VIZ.BEDHEAD] },
+      { from: 102, to: 111, visualizations: [VIZ.STARFIELD, VIZ.BEDHEAD] },
+      { from: 111, to: 128, visualizations: [VIZ.STARFIELD, VIZ.BEDHEAD], style: { lineColor: '#0cf800' } },
       { from: 128, to: 142, visualizations: [VIZ.ROAD, VIZ.PARTICLES] },
-      { from: 142, to: 153, visualizations: [VIZ.ROAD, VIZ.PARTICLES, 'tunnel', VIZ.ATTRACTOR], style: { lineWidth: 1, lineColor: '#0cf800' } },
-      { from: 153, to: 179, visualizations: [VIZ.TUNNEL, VIZ.ATTRACTOR] },
-      { from: 179, to: Infinity, visualizations: [VIZ.ATTRACTOR] },
+      { from: 142, to: 153, visualizations: [VIZ.ROAD, VIZ.PARTICLES, 'tunnel', VIZ.ATTRACTOR] },
+      { from: 153, to: 161, visualizations: [VIZ.TUNNEL, VIZ.ATTRACTOR], style: { background: '#ff3939' } },
+      { from: 161, to: 179, visualizations: [VIZ.TUNNEL, VIZ.THOMAS, VIZ.STARFIELD, VIZ.PARTICLES]},
+      { from: 179, to: 186, visualizations: [{ id: VIZ.CLIFFORD, bind: { glow: 'bass' } }, VIZ.STARFIELD] },
+      { from: 186, to: Infinity, visualizations: [VIZ.WAVEFORM, VIZ.ROLLING_BALL], style: { background: '#fb5df6', lineColor: '#000000', accentColor: '#fffc42' } },
     ],
   });
   window.addEventListener('resize', () => viz.resize());
@@ -57,6 +62,7 @@
     viz.play();
     playBtn.classList.add('gone');
     toggleBtn.classList.add('show');
+    progress.classList.add('show');
   });
 
   toggleBtn.addEventListener('click', () => {
@@ -74,6 +80,46 @@
   viz.on('play', () => showPaused(false));
   viz.on('pause', () => showPaused(true));
   viz.on('ended', () => showPaused(true));
+
+  // ---- progress / seek bar -------------------------------------------------
+
+  // Driven by the engine's frame events rather than the audio element, so it
+  // tracks whatever source the player actually has. aria-valuenow only
+  // updates on whole-percent changes to keep screen readers quiet.
+  let lastPct = -1;
+  viz.on('frame', ({ time }) => {
+    const d = viz.player.duration;
+    if (!Number.isFinite(d) || d <= 0) return;   // no song yet, or live input
+    const frac = Math.min(time / d, 1);
+    progressFill.style.transform = `scaleX(${frac})`;
+    const pct = Math.round(frac * 100);
+    if (pct !== lastPct) {
+      lastPct = pct;
+      progress.setAttribute('aria-valuenow', String(pct));
+    }
+  });
+
+  // Click or drag anywhere on the strip to seek. Pointer capture keeps a
+  // scrub alive when the pointer wanders off the 4px strip mid-drag.
+  const seekTo = (clientX) => {
+    const d = viz.player.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    const rect = progress.getBoundingClientRect();
+    const frac = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    viz.seek(frac * d);
+    // Snap the fill now — the next frame event confirms it, but waiting for
+    // one makes a paused-scrub feel dead.
+    progressFill.style.transform = `scaleX(${frac})`;
+  };
+  progress.addEventListener('pointerdown', (e) => {
+    // Capture can throw on exotic/synthetic pointers; the click-seek should
+    // survive that, it just won't scrub.
+    try { progress.setPointerCapture(e.pointerId); } catch { /* no scrub */ }
+    seekTo(e.clientX);
+  });
+  progress.addEventListener('pointermove', (e) => {
+    if (progress.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
+  });
 
   window.viz = viz; // console access for debugging/experimentation
 })();
