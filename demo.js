@@ -5,7 +5,7 @@
  * the library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { GloamingKit, registry, VIZ } = gloamingKit;
+  const { GloamingKit, registry, VIZ, TRIGGER } = gloamingKit;
 
   const canvas = document.getElementById('stage');
   const playBtn = document.getElementById('play');

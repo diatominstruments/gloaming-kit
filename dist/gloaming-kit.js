@@ -175,7 +175,7 @@ var gloamingKit = (() => {
     constructor(player, node) {
       if (node.context !== player.ctx) {
         throw new Error(
-          "SongPlayer: node belongs to a different AudioContext. Build it with the player's context (viz.player.ctx), or pass that context to MusicViz as `audioContext`."
+          "SongPlayer: node belongs to a different AudioContext. Build it with the player's context (viz.player.ctx), or pass that context to GloamingKit as `audioContext`."
         );
       }
       this.player = player;

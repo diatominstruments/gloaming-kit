@@ -170,7 +170,7 @@ class LiveSource {
       throw new Error(
         'SongPlayer: node belongs to a different AudioContext. Build it with '
         + 'the player\'s context (viz.player.ctx), or pass that context to '
-        + 'MusicViz as `audioContext`.',
+        + 'GloamingKit as `audioContext`.',
       );
     }
     this.player = player;

@@ -56,12 +56,12 @@ const { GloamingKit, registry, VIZ, TRIGGER, Visualization, register } = gloamin
 
 Importing from source, IDEs infer everything and autocomplete works out of
 the box (`VIZ.` lists every visualization). The global does **not** get this:
-a classic `<script>` declares nothing to the language service, so `musicviz`
+a classic `<script>` declares nothing to the language service, so `gloamingKit`
 is implicitly `any` and completion goes silent. A JSDoc cast restores it —
 no TypeScript build required, IDEs read the annotation as-is:
 
 ```js
-const { MusicViz, VIZ } = /** @type {import('./src/engine.js')} */ (musicviz);
+const { GloamingKit, VIZ } = /** @type {import('./src/engine.js')} */ (gloamingKit);
 ```
 
 (Adjust the path to wherever the source lives relative to your script.)
@@ -202,7 +202,7 @@ The node must belong to the player's `AudioContext` — either build it from
 `viz.player.ctx`, or pass your own context to the engine:
 
 ```js
-const viz = new MusicViz({ canvas, audioContext: myCtx, timeline: [...] });
+const viz = new GloamingKit({ canvas, audioContext: myCtx, timeline: [...] });
 ```
 
 ## Built-in visualizations
