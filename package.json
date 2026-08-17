@@ -1,9 +1,9 @@
 {
-  "name": "musicviz",
+  "name": "gloaming-kit",
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "build": "esbuild src/engine.js --bundle --format=iife --global-name=musicviz --outfile=dist/musicviz.js --sourcemap",
+    "build": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=dist/gloaming-kit.js --sourcemap",
     "watch": "npm run build -- --watch"
   },
   "devDependencies": {

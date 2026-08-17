@@ -10,10 +10,10 @@ const FADE_SECONDS = 0.6;
 const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
 
 /**
- * MusicViz — the framework entry point. Wires player → analyzer → active
+ * GloamingKit — the framework entry point. Wires player → analyzer → active
  * visualizations onto a canvas, driven by a timeline config.
  *
- *   const viz = new MusicViz({
+ *   const viz = new GloamingKit({
  *     canvas,
  *     style: { background: '#0a0a12', lineColor: '#7fffd4', ... },
  *     timeline: [{ from: 0, to: 60, visualizations: ['eq-bars'] }],
@@ -25,7 +25,7 @@ const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
  * Re-emits player events ('load', 'play', 'pause', 'ended', 'seek') and
  * analyzer events ('frame', 'trigger:<name>') for app-level UI.
  */
-export class MusicViz extends Emitter {
+export class GloamingKit extends Emitter {
   constructor({
     canvas, style = {}, timeline = [], triggers = DEFAULT_TRIGGERS, styleFade = STYLE_TAU,
   } = {}) {
@@ -212,7 +212,7 @@ export class MusicViz extends Emitter {
   spawn(key, { id, bind }) {
     const VizClass = registry.get(id);
     if (!VizClass) {
-      console.warn(`MusicViz: unknown visualization '${id}'`);
+      console.warn(`GloamingKit: unknown visualization '${id}'`);
       return;
     }
     const viz = new VizClass({
@@ -232,7 +232,7 @@ export class MusicViz extends Emitter {
       if (def.kind !== 'event') {
         for (const name of referencedTriggers(spec)) {
           if (!this.analyzer.hasTrigger(name)) {
-            console.warn(`MusicViz: '${id}.${slot}' references trigger '${name}', which is not configured — its envelope will stay at 0`);
+            console.warn(`GloamingKit: '${id}.${slot}' references trigger '${name}', which is not configured — its envelope will stay at 0`);
           }
         }
         continue;
@@ -240,7 +240,7 @@ export class MusicViz extends Emitter {
       const name = resolveEvent(spec, `${id}.${slot}`);
       if (!name) continue;
       if (!this.analyzer.hasTrigger(name)) {
-        console.warn(`MusicViz: '${id}.${slot}' is bound to trigger '${name}', which is not configured — it will never fire`);
+        console.warn(`GloamingKit: '${id}.${slot}' is bound to trigger '${name}', which is not configured — it will never fire`);
       }
       entry.offs.push(
         this.analyzer.on(`trigger:${name}`, (data) => {

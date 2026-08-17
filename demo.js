@@ -1,15 +1,15 @@
 /**
  * Demo app — an example end-user script, deliberately not part of the library
- * build. It loads as a classic <script> after dist/musicviz.js and reads the
- * library off the `musicviz` global, the same way any page embedding the
- * library would. Wrapped in an IIFE so its locals don't leak onto `window`.
+ * build. It loads as a classic <script> after dist/gloaming-kit.js and reads
+ * the library off the `gloamingKit` global, the same way any page embedding
+ * the library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { MusicViz, registry, VIZ } = musicviz;
+  const { GloamingKit, registry, VIZ } = gloamingKit;
 
   const canvas = document.getElementById('stage');
 
-  const viz = new MusicViz({
+  const viz = new GloamingKit({
     canvas,
     style: {
       background: '#0a0a12',

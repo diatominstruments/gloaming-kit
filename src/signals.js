@@ -37,7 +37,7 @@ import { approach, clamp01 } from './util.js';
  * being 150 lines.
  */
 
-const warn = (path, message) => console.warn(`MusicViz routing (${path}): ${message}`);
+const warn = (path, message) => console.warn(`GloamingKit routing (${path}): ${message}`);
 
 const constant = (k) => () => k;
 

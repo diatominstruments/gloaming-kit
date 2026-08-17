@@ -1,4 +1,4 @@
-# MusicViz
+# GloamingKit
 
 A small framework for building music visualizations with Canvas 2D and the
 WebAudio API. A song plays in the browser, an analyzer emits per-frame band
@@ -17,13 +17,13 @@ The build bundles **the library only**, from `src/engine.js`:
 npm install && npm run build
 ```
 
-That writes `dist/musicviz.js`, an IIFE bundle exposing the API on a
-`musicviz` global. `npm run watch` rebuilds on change.
+That writes `dist/gloaming-kit.js`, an IIFE bundle exposing the API on a
+`gloamingKit` global. `npm run watch` rebuilds on change.
 
 `index.html` then loads the library and the demo app as two classic scripts:
 
 ```html
-<script src="dist/musicviz.js" defer></script>
+<script src="dist/gloaming-kit.js" defer></script>
 <script src="demo.js" defer></script>
 ```
 
@@ -33,7 +33,7 @@ tag is a module, the page works opened straight from disk; only the "Demo
 track" button needs a server, since `fetch()` is blocked on `file://`:
 
 ```bash
-python3 -m http.server 8137 --directory musicviz
+python3 -m http.server 8137 --directory gloaming-kit
 ```
 
 `demo-track.wav` is a generated 64-second synth loop (regenerate with
@@ -45,19 +45,19 @@ decode via the file picker.
 As ES modules, straight from source, no build:
 
 ```js
-import { MusicViz, VIZ, TRIGGER } from './src/engine.js';
+import { GloamingKit, VIZ, TRIGGER } from './src/engine.js';
 ```
 
 Or from the bundle, via the global:
 
 ```js
-const { MusicViz, registry, VIZ, TRIGGER, Visualization, register } = musicviz;
+const { GloamingKit, registry, VIZ, TRIGGER, Visualization, register } = gloamingKit;
 ```
 
 ## Architecture
 
 ```
-SongPlayer ──▶ Analyzer ──▶ MusicViz engine ──▶ active Visualizations ──▶ canvas
+SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visualizations ──▶ canvas
  (buffer,       (FFT bands,    (raf loop, timeline,   (draw, read input
   transport)     triggers)      routing, style)        slots)
 ```
@@ -79,7 +79,7 @@ SongPlayer ──▶ Analyzer ──▶ MusicViz engine ──▶ active Visuali
 - **Style** ([src/style.js](src/style.js)) — interpolates the live style
   toward whatever the current windows ask for, so colours and widths travel
   between sections instead of cutting.
-- **MusicViz** ([src/engine.js](src/engine.js)) — the entry point. Runs the
+- **GloamingKit** ([src/engine.js](src/engine.js)) — the entry point. Runs the
   animation loop, instantiates and disposes visualizations as their windows
   come and go (with an alpha crossfade), feeds their input slots, and keeps
   the live style moving toward the timeline's target.
@@ -87,9 +87,9 @@ SongPlayer ──▶ Analyzer ──▶ MusicViz engine ──▶ active Visuali
 ## Usage
 
 ```js
-import { MusicViz, VIZ, TRIGGER } from './src/engine.js';
+import { GloamingKit, VIZ, TRIGGER } from './src/engine.js';
 
-const viz = new MusicViz({
+const viz = new GloamingKit({
   canvas: document.querySelector('canvas'),
   style: {
     background: '#0a0a12',
