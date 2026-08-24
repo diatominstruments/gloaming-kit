@@ -28,6 +28,7 @@ const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
 export class GloamingKit extends Emitter {
   constructor({
     canvas, style = {}, timeline = [], triggers = DEFAULT_TRIGGERS, styleFade = STYLE_TAU,
+    audioContext,
   } = {}) {
     super();
     this.canvas = canvas;
@@ -50,7 +51,7 @@ export class GloamingKit extends Emitter {
     this.styleFade = styleFade;
     this.styleDirty = true;   // snap on the first frame and after a seek
 
-    this.player = new SongPlayer();
+    this.player = new SongPlayer(audioContext);
     this.analyzer = new Analyzer(this.player, { triggers });
     this.timeline = new Timeline(timeline);
 
