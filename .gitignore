@@ -1,0 +1,6 @@
+# Build output — regenerate with `npm run build`.
+dist/
+
+node_modules/
+
+.DS_Store

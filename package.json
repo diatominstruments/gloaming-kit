@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "build": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=dist/gloaming-kit.js --sourcemap",
-    "watch": "npm run build -- --watch"
+    "watch": "npm run build -- --watch",
+    "build:demo": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=docs/gloaming-kit.js --minify"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

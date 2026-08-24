@@ -20,6 +20,11 @@ npm install && npm run build
 That writes `dist/gloaming-kit.js`, an IIFE bundle exposing the API on a
 `gloamingKit` global. `npm run watch` rebuilds on change.
 
+`dist/` is **not** checked in, so this build is a required first step after
+cloning — `index.html` loads the bundle by path and will do nothing without
+it. (Keeping generated output out of git is also what keeps the `gh-pages`
+demo branch rebasing cleanly; see [DEMO.md](DEMO.md).)
+
 `index.html` then loads the library and the demo app as two classic scripts:
 
 ```html
