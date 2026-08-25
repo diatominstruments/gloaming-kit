@@ -241,10 +241,10 @@ fast you fly.
 | `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure |
 | `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions as `attractor` |
 | `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions as `attractor` |
-| `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
-| `aizawa` | Aizawa attractor as a rotating ribbon; a rounded shell with a spindle running up its axis, refilled from the pole. Same reactions as `thomas` |
-| `rossler` | Rössler attractor as a rotating ribbon; a broad flat disc with one lifted fold, so the silhouette changes markedly as the view turns. Same reactions as `thomas` |
-| `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling. Same reactions as `thomas` |
+| `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon, viewed from inside the lattice (`distance: 'near'`) so cells sweep past the camera; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
+| `aizawa` | Aizawa attractor as a rotating ribbon; a shell wound into tight concentric spirals by a fast reversed spin. Same reactions as `thomas`, and the one most worth trying at `distance: 'near'` |
+| `rossler` | Rössler attractor as a rotating ribbon; a broad flat disc with one lifted fold, so the silhouette changes markedly as the view turns. Its fold threshold drifts over a wide band, growing and shrinking the whole figure fourfold — it reads as the attractor rushing in and falling away. Same reactions as `thomas` |
+| `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling, and scaled past the frame so the horns run off every edge. Same reactions as `thomas` |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
 
 ## Routing
@@ -312,6 +312,39 @@ accumulated state restarts.
 `eq-bars` has no slots because it draws the raw `spectrum`, and `waveform`
 routes only its amplitude — the trace data itself is an array, with nothing
 meaningful to remap.
+
+## Options
+
+`bind` decides what a visualization listens to. `options` carries per-instance
+settings that have nothing to do with audio — a plain object, passed through
+untouched and read by the visualization as `this.options`:
+
+```js
+{ id: VIZ.THOMAS, options: { distance: 'far' } }
+```
+
+Nothing compiles or validates it; a visualization reads the keys it knows and
+falls back to its own statics for the rest. Like `bind`, an entry carrying
+`options` is a distinct instance, so the same attractor can be on screen twice
+at two different distances.
+
+### Camera distance
+
+The flow attractors take `distance: 'near' | 'med' | 'far'`. `FOCAL` is a
+distance in world units and the projection divides by `FOCAL + z`, so this is
+literally the camera sliding along its own axis — each system declares the
+framing that suits it as `med`, and the presets are multipliers on that
+(0.15 / 1 / 1.6).
+
+`near` puts the camera **inside** the body. Perspective goes violent, near
+sections balloon past the frame, and the figure reads as something you are
+flying through rather than orbiting. That is only safe because the renderer
+clips at a near plane: without it, everything behind the camera inverts
+through the origin and whips across the screen. `NEAR` sets where that plane
+sits as a fraction of the focal length, and it doubles as the cap on how much
+the projection can magnify anything — on Thomas at `near`, over a full
+revolution, the longest segment drawn goes from 3.1× the canvas diagonal at
+`NEAR = 0.06` to 0.4× at 0.35. At `med` and `far` nothing is ever clipped.
 
 ## Window styles
 
@@ -414,8 +447,8 @@ watch for parameters that must not cross zero, like Bedhead's divisor.
 
 ### Fitting a new flow to the renderer
 
-Three constants have to be re-derived per system rather than inherited, and
-two of them fail in ways that aren't obvious from reading the code:
+Four constants have to be re-derived per system rather than inherited, and
+most of them fail in ways that aren't obvious from reading the code:
 
 - **`FOCAL`** is a distance in *world units*, and the projection divides by
   `FOCAL + z`. If the body is larger than `FOCAL`, that crosses zero and
@@ -425,12 +458,28 @@ two of them fail in ways that aren't obvious from reading the code:
   is fine for a small system and catastrophic for a large one.
 - **`H`** is a step in the system's own time units, and those differ by an
   order of magnitude between systems. What transfers is the ratio of step
-  length to body radius: Thomas runs about 0.011, and matching that gives a
-  comparably smooth ribbon covering a comparable fraction of the orbit. Reuse
-  Thomas's `H = 0.06` on a faster system and RK4 will alias or diverge.
+  length to body radius — how far one sample moves as a fraction of the
+  figure. The four here idle at about 0.035, which buys a lot of trajectory
+  per frame while staying smooth; past roughly 0.1 the ribbon visibly facets.
+  Reuse another system's `H` directly and RK4 will alias or diverge. Note
+  that a *parameter* can force this down: Aizawa's spin term at 14 moves the
+  trajectory four times faster than at 3.5, so its step had to shrink even
+  though nothing about the renderer changed.
+- **`H_LIMIT`** is the ceiling on `H` after everything that scales it. Mid
+  energy and a bass surge together multiply the step by up to ~4, and that
+  product is what has to stay safe, not the base value — Rössler diverges
+  outright at ~24× its resting step, which a loud passage reaches on its own.
+  Set it from a sweep, at roughly half the multiplier where the system breaks.
 - **`TWIST`** is radians per world unit of height, so it scales inversely
   with the body. Thomas's 0.045 across its ±4.5 body is ~0.2 rad of twist;
   aim for that.
+
+`SUBSTEPS` is not in that list, because it is free. Accuracy is set by `H`
+alone; taking more steps per frame only buys more trajectory in the ring
+buffer, which is what makes the ribbon read as the whole attractor drawn at
+once with a bright head racing round it rather than a short worm crawling
+over an invisible shape. At 32, six instances cost about 0.3 ms a frame.
+Reach for it before reaching for `H`.
 
 Worth checking a candidate numerically before tuning it by eye. Some systems
 have a failure mode the `LIMIT` guard does *not* catch: rather than diverging,
@@ -440,3 +489,17 @@ the collapse — see [aizawa.js](src/visualizations/aizawa.js) for the bands
 that came out of sweeping it. A largest-Lyapunov estimate over the corners of
 the drift+jolt envelope distinguishes genuine chaos from a limit cycle, which
 an extent check alone will not.
+
+Sweep the *corners*, not one parameter at a time. Aizawa's `b` is safe down to
+0.68 on its own and only to 0.72 once `c` is simultaneously at the bottom of
+its own band; a one-at-a-time sweep says the wider setting is fine and it goes
+to a stationary dot on stage. Sweep at the clamped step as well as the idle
+one, too — a larger step's own error can carry a trajectory off a fixed point
+it would otherwise settle onto, so a config can look alive under load and die
+when the track goes quiet.
+
+Not every non-chaotic result is a failure. Rössler spends the bottom of its
+fold band as a plain limit cycle: full extent, no evolution, which on screen
+is the figure settling into one clean loop before the drift carries it back
+up. Worth knowing which of the two you have, and choosing the base parameter
+so the resting state is the one you want to look at.

@@ -9,10 +9,13 @@
  *        { id: 'radial-burst', bind: { ring: 'hihat', core: 'treble' } },
  *      ] }]
  *
- * An entry is either a bare id or `{ id, bind }`, where `bind` overrides
- * individual input slots declared by that visualization (see base.js for
- * slots and signals.js for what a binding may contain). Slots left unbound
- * use their declared defaults.
+ * An entry is either a bare id or `{ id, bind, options }`, where `bind`
+ * overrides individual input slots declared by that visualization (see
+ * base.js for slots and signals.js for what a binding may contain) and
+ * `options` carries per-instance settings unrelated to audio. Slots left
+ * unbound use their declared defaults.
+ *
+ *   { id: 'thomas', options: { distance: 'far' } }
  *
  * A window may also carry a partial `style`, which overrides the engine's
  * base style while the window is running:
@@ -24,14 +27,21 @@
  * over an earlier one's. `to: Infinity` (or omitted) runs to the end.
  */
 
-/** Stable identity for an entry — the same id wired two ways is two instances. */
-const keyOf = (entry) =>
-  (entry.bind ? `${entry.id}#${JSON.stringify(entry.bind)}` : entry.id);
+/**
+ * Stable identity for an entry — the same id wired or configured two ways is
+ * two instances, so both can be on screen at once.
+ */
+const keyOf = (entry) => {
+  let key = entry.id;
+  if (entry.bind) key += `#${JSON.stringify(entry.bind)}`;
+  if (entry.options) key += `@${JSON.stringify(entry.options)}`;
+  return key;
+};
 
 const normalize = (entry) => {
   const e = typeof entry === 'string'
-    ? { id: entry, bind: null }
-    : { id: entry.id, bind: entry.bind ?? null };
+    ? { id: entry, bind: null, options: null }
+    : { id: entry.id, bind: entry.bind ?? null, options: entry.options ?? null };
   return { ...e, key: keyOf(e) };
 };
 

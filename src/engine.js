@@ -210,7 +210,7 @@ export class GloamingKit extends Emitter {
     }
   }
 
-  spawn(key, { id, bind }) {
+  spawn(key, { id, bind, options }) {
     const VizClass = registry.get(id);
     if (!VizClass) {
       console.warn(`GloamingKit: unknown visualization '${id}'`);
@@ -221,6 +221,7 @@ export class GloamingKit extends Emitter {
       height: this.canvas.clientHeight,
       style: this.style,
       bind,
+      options,
     });
     const entry = { viz, alpha: 0, leaving: false, offs: [] };
 

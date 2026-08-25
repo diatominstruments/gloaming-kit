@@ -34,8 +34,15 @@ export class Thomas extends FlowAttractor {
   static SCALE = 0.1;
 
   static SEED = [1.1, 1.1, -0.01];
-  static H = 0.06;
+  static H = 0.36;        // 6x the smallest step that resolves this system
+  static H_LIMIT = 0.72;  // measured: facets by ~1.4, and 0.72 leaves margin
   static FOCAL = 9;
+  // The lattice is the one structure here worth being inside: at `near` the
+  // camera sits among the cells and the trajectory sweeps past and through
+  // frame rather than orbiting in the middle of it. Sweeping the focal length
+  // by hand, anywhere from ~0.4 to ~12 reads well, so this is not a knife
+  // edge — `med` and `far` are both perfectly good, just less immersive.
+  static DISTANCE = 'near';
 
   // Idle corkscrew tuned for this system's ±4.5 extent: ~0.2 rad across the
   // body at the swing's peak.

@@ -150,6 +150,23 @@ export class PointCloudAttractor extends AttractorBase {
 }
 
 /**
+ * Camera distance presets, as multipliers on a system's own FOCAL.
+ *
+ * FOCAL is a distance in world units and the projection divides by
+ * `FOCAL + z`, so it is really "how far the camera sits from the figure".
+ * Each system declares the value that frames it well as `med`; the other two
+ * are the same camera moved along its axis, which is why they are multipliers
+ * rather than per-class constants.
+ *
+ * `near` deliberately puts the camera *inside* the body — perspective goes
+ * violent, near sections balloon past the frame and the view reads as flying
+ * through the structure rather than orbiting it. That only works because the
+ * renderer clips at the near plane (see NEAR below); without the clip,
+ * everything behind the camera inverts through the origin and streaks.
+ */
+const DISTANCE = { near: 0.15, med: 1, far: 1.6 };
+
+/**
  * FlowAttractor — for 3D continuous systems (Thomas, Lorenz, Aizawa…).
  *
  * Unlike the maps above, these are differential equations whose solution is
@@ -166,6 +183,11 @@ export class PointCloudAttractor extends AttractorBase {
  * view's yaw rate and briefly swells the whole figure (KICK_SPIN / PULSE),
  * moving every visible point at once without deforming the trail.
  *
+ * Framing is an option rather than a constant, because the same system is a
+ * different picture from a different distance:
+ *
+ *   { id: 'thomas', options: { distance: 'far' } }   // near | med | far
+ *
  * Subclasses implement `derivative(x, y, z, p, out)`.
  */
 export class FlowAttractor extends AttractorBase {
@@ -176,12 +198,38 @@ export class FlowAttractor extends AttractorBase {
   };
 
   static TRAIL = 1400;        // positions retained in the ribbon
-  static SUBSTEPS = 6;        // integration steps per frame
+  // 32 substeps rather than a handful: the ring buffer then holds tens of
+  // body-lengths of trajectory instead of a fraction of one, so the ribbon
+  // reads as the whole attractor drawn at once with a bright head racing
+  // round it, rather than a short worm crawling over an invisible shape.
+  // Costs only arithmetic — RK4 accuracy is set by H, not by how many steps
+  // are taken per frame — so it is the cheap half of "show more structure".
+  static SUBSTEPS = 32;
   static H = 0.05;            // base step size, in the system's own time units
   static SPEED = [1, 1.6];    // [idle, per unit of mid energy] multiplier on H
+  // Ceiling on the *product* of H and everything that scales it. H is the
+  // expensive half: too large a step and RK4 aliases the curve into facets,
+  // and past a system-specific threshold it diverges outright — Rössler blows
+  // up around 24x its base step, which a loud passage would otherwise reach.
+  // Subclasses set this from a measured sweep; see the README.
+  static H_LIMIT = 0.6;
   static SEED = [0.1, 0, 0];
   static CENTER = [0, 0, 0];  // world-space origin to draw around
-  static FOCAL = 9;           // perspective strength, in world units
+  static FOCAL = 9;           // camera distance in world units, at `med`
+  static DISTANCE = 'med';    // 'near' | 'med' | 'far'; see DISTANCE above
+  // Near-plane clip, as a fraction of the focal length. Anything closer to
+  // the camera than this is dropped and the ribbon is broken there.
+  //
+  // It sets the largest magnification the projection can apply, which is what
+  // actually bounds the damage: a sample just in front of the plane is scaled
+  // by 1/NEAR, and its neighbour a fraction of a world unit away can land a
+  // long way off. Measured on Thomas at `near` over a full revolution, the
+  // longest segment drawn runs 3.1x the canvas diagonal at 0.06 and 0.4x at
+  // 0.35 — the difference between a strand whipping across the frame and one
+  // sweeping past the camera. It costs almost nothing to raise: the clipped
+  // fraction only goes 39% -> 44%, because most of what it drops is behind
+  // the camera either way. At `med` and `far` no sample ever comes close.
+  static NEAR = 0.35;
   static CHUNKS = 8;          // ribbon is stroked in this many fading pieces
   static SPIN = [0.25, 0.6];  // [idle, per unit of mid energy] yaw rate, rad/s
   static LIMIT = 1e4;
@@ -207,6 +255,15 @@ export class FlowAttractor extends AttractorBase {
     this.spin = this.constructor.SPIN[0];
     this.surge = 0;
     this.kick = 0;
+
+    // Camera distance resolves once: an unknown name falls back to `med`
+    // rather than producing a NaN focal length that blanks the figure.
+    const name = this.options.distance ?? this.constructor.DISTANCE;
+    if (!(name in DISTANCE)) {
+      console.warn(`GloamingKit: '${this.constructor.id}' got distance '${name}'; expected near|med|far`);
+    }
+    this.focal = this.constructor.FOCAL * (DISTANCE[name] ?? DISTANCE.med);
+
     // Scratch for RK4, preallocated so integration never allocates.
     this.k = [0, 1, 2, 3].map(() => new Float64Array(3));
     this.tmp = new Float64Array(3);
@@ -257,8 +314,8 @@ export class FlowAttractor extends AttractorBase {
 
   draw(ctx, dt) {
     const {
-      TRAIL, SUBSTEPS, H, SPEED, SEED, CENTER, SCALE, FOCAL, CHUNKS, SPIN, LIMIT,
-      TWIST, KICK_SPIN, PULSE, KICK_DECAY,
+      TRAIL, SUBSTEPS, H, H_LIMIT, SPEED, SEED, CENTER, SCALE, CHUNKS, SPIN, LIMIT,
+      TWIST, KICK_SPIN, PULSE, KICK_DECAY, NEAR,
     } = this.constructor;
     this.updateParams(dt);
 
@@ -266,7 +323,10 @@ export class FlowAttractor extends AttractorBase {
     // Exponential, not linear: a linear ramp ends in a corner where the whip
     // stops dead, which reads as snapping back. This eases out instead.
     this.kick *= Math.exp(-dt * KICK_DECAY);
-    const h = H * (SPEED[0] + this.in('travel') * SPEED[1] + this.surge * 1.5);
+    // Clamped, not just scaled: mid energy and a bass surge together multiply
+    // the step by up to ~4, which past H_LIMIT stops being "faster" and starts
+    // being a different, wrong curve — or no curve at all.
+    const h = Math.min(H_LIMIT, H * (SPEED[0] + this.in('travel') * SPEED[1] + this.surge * 1.5));
 
     const s = this.state;
     for (let i = 0; i < SUBSTEPS; i++) {
@@ -295,6 +355,8 @@ export class FlowAttractor extends AttractorBase {
     const cx = this.width / 2;
     const cy = this.height / 2;
     const scale = Math.min(this.width, this.height) * SCALE;
+    const focal = this.focal;
+    const near = focal * NEAR;
     const cosY = Math.cos(this.yaw);
     const sinY = Math.sin(this.yaw);
     const cosP = Math.cos(pitch);
@@ -317,6 +379,11 @@ export class FlowAttractor extends AttractorBase {
       if (to - from < 2) continue;
 
       ctx.beginPath();
+      // Whether the previous sample landed in front of the near plane. At
+      // `near` distance the camera sits inside the figure, so the ribbon
+      // genuinely leaves and re-enters the view and has to be broken and
+      // restarted rather than joined across the gap.
+      let drawing = false;
       for (let k = from; k < to; k++) {
         const i = ((start + k) % TRAIL) * 3;
         const x0 = this.trail[i] - CENTER[0];
@@ -337,10 +404,20 @@ export class FlowAttractor extends AttractorBase {
         const ry = y * cosP - rz * sinP;
         const rzp = y * sinP + rz * cosP;
 
-        const persp = FOCAL / (FOCAL + rzp);
+        const depth = focal + rzp;
+        if (depth <= near) {
+          drawing = false;
+          continue;
+        }
+        const persp = focal / depth;
         const sx = cx + rx * scale * persp;
         const sy = cy + ry * scale * persp;
-        k === from ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+        if (drawing) {
+          ctx.lineTo(sx, sy);
+        } else {
+          ctx.moveTo(sx, sy);
+          drawing = true;
+        }
       }
 
       const age = (c + 1) / CHUNKS;   // 0 → tail, 1 → head
