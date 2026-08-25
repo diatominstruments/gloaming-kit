@@ -242,6 +242,9 @@ fast you fly.
 | `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions as `attractor` |
 | `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions as `attractor` |
 | `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
+| `aizawa` | Aizawa attractor as a rotating ribbon; a rounded shell with a spindle running up its axis, refilled from the pole. Same reactions as `thomas` |
+| `rossler` | Rössler attractor as a rotating ribbon; a broad flat disc with one lifted fold, so the silhouette changes markedly as the view turns. Same reactions as `thomas` |
+| `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling. Same reactions as `thomas` |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
 
 ## Routing
@@ -408,3 +411,32 @@ can push them into a runaway region where one `Infinity` poisons the orbit
 permanently. Both renderers guard with a bounds check and reseed, so keep
 `DRIFT` and `JOLT` inside a range where the system stays interesting — and
 watch for parameters that must not cross zero, like Bedhead's divisor.
+
+### Fitting a new flow to the renderer
+
+Three constants have to be re-derived per system rather than inherited, and
+two of them fail in ways that aren't obvious from reading the code:
+
+- **`FOCAL`** is a distance in *world units*, and the projection divides by
+  `FOCAL + z`. If the body is larger than `FOCAL`, that crosses zero and
+  points invert through the origin, streaking across the screen. It must
+  exceed the farthest reach from `CENTER` — Thomas sits at roughly 2× its
+  own reach, which is a reasonable target. Inheriting Thomas's `FOCAL = 9`
+  is fine for a small system and catastrophic for a large one.
+- **`H`** is a step in the system's own time units, and those differ by an
+  order of magnitude between systems. What transfers is the ratio of step
+  length to body radius: Thomas runs about 0.011, and matching that gives a
+  comparably smooth ribbon covering a comparable fraction of the orbit. Reuse
+  Thomas's `H = 0.06` on a faster system and RK4 will alias or diverge.
+- **`TWIST`** is radians per world unit of height, so it scales inversely
+  with the body. Thomas's 0.045 across its ±4.5 body is ~0.2 rad of twist;
+  aim for that.
+
+Worth checking a candidate numerically before tuning it by eye. Some systems
+have a failure mode the `LIMIT` guard does *not* catch: rather than diverging,
+the attractor collapses onto a fixed point and the figure silently shrinks to
+a stationary dot. Aizawa does this, and its chaotic region sits right next to
+the collapse — see [aizawa.js](src/visualizations/aizawa.js) for the bands
+that came out of sweeping it. A largest-Lyapunov estimate over the corners of
+the drift+jolt envelope distinguishes genuine chaos from a limit cycle, which
+an extent check alone will not.

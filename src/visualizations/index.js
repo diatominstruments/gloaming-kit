@@ -12,6 +12,9 @@ import { DeJong } from './attractor.js';
 import { Clifford } from './clifford.js';
 import { Bedhead } from './bedhead.js';
 import { Thomas } from './thomas.js';
+import { Aizawa } from './aizawa.js';
+import { Rossler } from './rossler.js';
+import { Halvorsen } from './halvorsen.js';
 import { Harmonograph } from './harmonograph.js';
 
 /** Built-in visualization registry, keyed by the id used in timeline config. */
@@ -20,7 +23,7 @@ export const registry = new Map(
     EQBars, Waveform, RadialBurst, PolygonPulse, ParticleField,
     Road, Tunnel, RollingBall, Starfield,
     Lightning, Harmonograph,
-    DeJong, Clifford, Bedhead, Thomas,
+    DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
   ].map((V) => [V.id, V]),
 );
 
@@ -50,6 +53,9 @@ export const VIZ = Object.freeze({
   CLIFFORD: Clifford.id,
   BEDHEAD: Bedhead.id,
   THOMAS: Thomas.id,
+  AIZAWA: Aizawa.id,
+  ROSSLER: Rossler.id,
+  HALVORSEN: Halvorsen.id,
 });
 
 /** Register a custom visualization class (must have a static `id`). */
