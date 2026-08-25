@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GloamingKit</title>
+  <style>
+    :root {
+      --bg: #14141c;
+      --text: #e8e8f0;
+      --accent: #7fffd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Fixed to the viewport so the canvas is the whole page and the controls
+       float over it. viz.resize() reads clientWidth/Height, which this keeps
+       equal to the viewport. */
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Transport: a play button in the middle that steps aside once the song
+       is running, handing over to a permanent corner toggle. Both are shown
+       and hidden with opacity rather than `display`, so the swap can animate
+       and neither ever reflows the page. */
+    #play, #toggle {
+      position: fixed;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 50%;
+      background: rgba(20, 20, 28, 0.55);
+      border: 1px solid rgba(232, 232, 240, 0.25);
+      color: var(--accent);
+      cursor: pointer;
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      transition: opacity 0.28s ease, transform 0.28s ease,
+                  background 0.2s ease, border-color 0.2s ease;
+    }
+    #play svg, #toggle svg { width: 52%; height: 52%; fill: currentColor; display: block; }
+    #play:hover, #toggle:hover { background: rgba(20, 20, 28, 0.8); border-color: var(--accent); }
+
+    #play { width: 64px; height: 64px; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+    #play.gone { opacity: 0; transform: translate(-50%, -50%) scale(0.7); pointer-events: none; }
+
+    #toggle { width: 36px; height: 36px; top: 16px; left: 16px; opacity: 0; pointer-events: none; }
+    #toggle.show { opacity: 1; pointer-events: auto; }
+
+    /* One button, two glyphs — swapped by class so the icon can't drift out
+       of sync with a re-render. */
+    #toggle .i-play { display: none; }
+    #toggle.paused .i-pause { display: none; }
+    #toggle.paused .i-play { display: block; }
+
+    /* Progress: a thin strip along the bottom edge that doubles as a seek
+       bar. Appears together with the corner toggle, fattens under the
+       pointer; the ::before pad extends the hit target well above the strip
+       so it's clickable without aiming at 4 pixels. */
+    #progress {
+      position: fixed;
+      z-index: 2;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: rgba(232, 232, 240, 0.12);
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.28s ease, height 0.15s ease;
+    }
+    #progress.show { opacity: 1; pointer-events: auto; }
+    #progress:hover { height: 8px; }
+    #progress::before {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 20px;
+    }
+    /* Scaled rather than resized so the per-frame update never does layout. */
+    #progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transform: scaleX(0);
+      transform-origin: left;
+    }
+    /* Repo link, mirroring the toggle in the opposite corner. Always visible
+       — it's attribution, not transport, so it doesn't wait for playback. */
+    #gh-link {
+      position: fixed;
+      z-index: 2;
+      top: 16px; right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 18px;
+      background: rgba(20, 20, 28, 0.55);
+      border: 1px solid rgba(232, 232, 240, 0.25);
+      color: var(--text);
+      font-size: 13px;
+      text-decoration: none;
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    #gh-link:hover { background: rgba(20, 20, 28, 0.8); border-color: var(--accent); color: var(--accent); }
+    #gh-link svg { width: 16px; height: 16px; fill: currentColor; display: block; }
+  </style>
+  <audio id="song" src="sound2.wav" preload="auto"></audio>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <button id="play" aria-label="Play" title="Play">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+
+  <button id="toggle" aria-label="Pause" title="Pause">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path class="i-pause" d="M6 5h4v14H6zm8 0h4v14h-4z"/>
+      <path class="i-play" d="M8 5v14l11-7z"/>
+    </svg>
+  </button>
+
+  <div id="progress" role="progressbar" aria-label="Song progress"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div id="progress-fill"></div>
+  </div>
+
+  <a id="gh-link" href="https://github.com/diatominstruments/gloaming-kit"
+     target="_blank" rel="noopener">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    gloaming-kit
+  </a>
+
+  <!-- Library first, then the demo app that consumes it. Both are classic
+       scripts, so this page also works opened straight from disk. -->
+  <script src="gloaming-kit.js" defer></script>
+  <script src="demo.js" defer></script>
+</body>
+</html>
