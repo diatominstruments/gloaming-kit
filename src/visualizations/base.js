@@ -26,6 +26,14 @@ export { approach, clamp01 } from '../util.js';
  * Every slot has a default, so an unbound visualization behaves exactly as
  * if the routing layer weren't there.
  *
+ * A timeline entry may also carry `options` — plain per-instance settings that
+ * have nothing to do with audio, reachable as `this.options`:
+ *
+ *   { id: 'thomas', options: { distance: 'near' } }
+ *
+ * Unlike a binding, nothing compiles or validates these; a visualization reads
+ * the keys it knows and falls back to its own static defaults.
+ *
  * Subclasses implement:
  *
  *   onFrame(frame)          per-tick analysis data (bands, spectrum, level…)
@@ -42,10 +50,11 @@ export class Visualization {
   static triggers = [];
   static inputs = {};
 
-  constructor({ width, height, style, bind = null }) {
+  constructor({ width, height, style, bind = null, options = null }) {
     this.width = width;
     this.height = height;
     this.style = style;
+    this.options = options ?? {};
     this.frame = null; // latest analyzer frame, kept by default onFrame
 
     // Compile one signal per level slot, from the window's binding if it has

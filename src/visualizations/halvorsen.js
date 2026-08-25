@@ -35,7 +35,13 @@ export class Halvorsen extends FlowAttractor {
   static PARAMS = [1.42];
   static DRIFT = [0.06];
   static JOLT = [0.05];
-  static SCALE = 0.036;
+  // Deliberately overscaled: at 0.036 the whole figure sat inside the frame
+  // with room to spare, which made the three horns read as a small object on
+  // a large background. At 0.09 the body is about 2.4x the short edge, so the
+  // horns run off every side and what's on screen is a detail of a structure
+  // implied to continue past it. Nothing is lost that the rotation doesn't
+  // bring back round.
+  static SCALE = 0.09;
 
   // Off-origin seed: the symmetric point is an equilibrium, so starting at
   // the origin would sit there instead of falling onto the attractor.
@@ -43,7 +49,8 @@ export class Halvorsen extends FlowAttractor {
   // The attractor is centred near (−3, −3, −3) rather than the origin — the
   // cyclic symmetry is about that point, not about zero.
   static CENTER = [-3.1, -3.1, -3.1];
-  static H = 0.003;
+  static H = 0.018;       // 6x; measured clean to 24x, so this is unstressed
+  static H_LIMIT = 0.036;
   static FOCAL = 28;   // must clear the ~13 reach from CENTER
 
   static TWIST = 0.02;   // body half-height ~10
