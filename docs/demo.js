@@ -35,10 +35,10 @@
       { from: 117, to: 128, visualizations: [{ id: VIZ.STARFIELD, bind: { swell: 'highMid',  } }, VIZ.BEDHEAD], style: { lineColor: '#ff17dc' } },
       { from: 128, to: 142, visualizations: [VIZ.ROAD, VIZ.PARTICLES, VIZ.STARFIELD], style: { lineColor: '#ffffff' } },
       { from: 142, to: 153, visualizations: [VIZ.ROAD, VIZ.PARTICLES, 'tunnel', VIZ.ATTRACTOR] },
-      { from: 153, to: 161, visualizations: [VIZ.TUNNEL, VIZ.ATTRACTOR], style: { background: '#ff3939' } },
+      { from: 153, to: 161, visualizations: [VIZ.TUNNEL, { id: VIZ.AIZAWA, options: { distance: 'near' }}], style: { background: '#ff3939' } },
       { from: 161, to: 179, visualizations: [VIZ.TUNNEL, VIZ.THOMAS, VIZ.STARFIELD, VIZ.PARTICLES]},
       { from: 179, to: 186, visualizations: [{ id: VIZ.CLIFFORD, bind: { glow: 'bass' } }, VIZ.STARFIELD] },
-      { from: 186, to: Infinity, visualizations: [VIZ.WAVEFORM, VIZ.ROLLING_BALL], style: { background: '#fb5df6', lineColor: '#000000', accentColor: '#fffc42' } },
+      { from: 186, to: Infinity, visualizations: [VIZ.WAVEFORM, VIZ.ROLLING_BALL], style: { background: '#fb5df6', lineColor: '#000000', accentColor: '#e8dd15' } },
     ],
   });
   window.addEventListener('resize', () => viz.resize());
