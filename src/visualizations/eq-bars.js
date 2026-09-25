@@ -6,6 +6,7 @@ import { Visualization } from './base.js';
  */
 export class EQBars extends Visualization {
   static id = 'eq-bars';
+  static label = 'EQ Bars';
 
   constructor(opts) {
     super(opts);

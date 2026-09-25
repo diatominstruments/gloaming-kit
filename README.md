@@ -220,6 +220,7 @@ const viz = new GloamingKit({ canvas, audioContext: myCtx, timeline: [...] });
 | `polygon-pulse` | rotating polygon; radius pulses, side count morphs, hits kick the spin |
 | `particles` | drifting particles that twinkle; hits shove every particle outward |
 | `rolling-ball` | wireframe sphere tumbling in place — loudness sets the roll rate, bass swells it, and snare hits swerve it onto a new heading |
+| `text` | a string drifting around the screen and reflecting off the edges; each time `bounce` rises past a threshold it turns onto a new heading with a pop. Takes `text` and `threshold` options |
 
 **Motion set** — perspective visuals that put the viewer in motion. Travel
 speed is a fixed constant in all three (tune it via the class's `SPEED`
@@ -301,6 +302,7 @@ accumulated state restarts.
 | `polygon-pulse` | `kick` ← snare, `punch` ← bass | `sides` ← mid, `swell` ← bass |
 | `particles` | `shove` ← bass | `twinkle` ← treble |
 | `rolling-ball` | `swerve` ← snare | `speed` ← rms, `swell` ← bass |
+| `text` | — | `bounce` ← bass, `speed` ← rms |
 | `road` | — | `swell` ← rms |
 | `tunnel` | — | `spin` ← treble |
 | `starfield` | `swell` ← bass | — |
@@ -327,6 +329,19 @@ Nothing compiles or validates it; a visualization reads the keys it knows and
 falls back to its own statics for the rest. Like `bind`, an entry carrying
 `options` is a distinct instance, so the same attractor can be on screen twice
 at two different distances.
+
+### Bouncing text
+
+`text` takes `text` (the string, default `'GLOAMING'`) and `threshold` (default
+0.6). Which frequency turns it is just the `bounce` binding, so any band or
+signal works:
+
+```js
+{ id: VIZ.TEXT, options: { text: 'hello', threshold: 0.5 }, bind: { bounce: 'treble' } }
+```
+
+After a turn, the level has to drop below 80% of the threshold before it can
+fire again, so a level hovering at the line doesn't jitter the heading.
 
 ### Camera distance
 

@@ -12,6 +12,7 @@ import { PointCloudAttractor } from './attractor-base.js';
  */
 export class DeJong extends PointCloudAttractor {
   static id = 'attractor';
+  static label = 'De Jong';
 
   static PARAMS = [1.4, -2.3, 2.4, -2.1];
   static DRIFT = 0.35;

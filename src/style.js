@@ -37,6 +37,19 @@ const channel = (n) =>
 export const formatColor = ([r, g, b]) => `#${channel(r)}${channel(g)}${channel(b)}`;
 
 /**
+ * One colour channel's step. Colours are stored as hex, so every step is
+ * rounded to a whole channel value — and near the target a frame's step is
+ * under half a unit, which rounds straight back to where it started. Left
+ * alone, a colour stalls several units short of its target forever; so when
+ * rounding would stall, move one unit instead.
+ */
+function easeChannel(from, to, tau, dt) {
+  const next = approach(from, to, tau, dt);
+  if (from !== to && Math.round(next) === from) return from + Math.sign(to - from);
+  return next;
+}
+
+/**
  * Ease `current` toward `target` in place, one key at a time. Mutates rather
  * than replacing because every active visualization holds a reference to the
  * live style object.
@@ -56,11 +69,7 @@ export function easeStyle(current, target, tau, dt) {
     const toRGB = parseColor(to);
     const fromRGB = parseColor(from);
     if (toRGB && fromRGB) {
-      current[key] = formatColor([
-        approach(fromRGB[0], toRGB[0], tau, dt),
-        approach(fromRGB[1], toRGB[1], tau, dt),
-        approach(fromRGB[2], toRGB[2], tau, dt),
-      ]);
+      current[key] = formatColor(fromRGB.map((c, i) => easeChannel(c, toRGB[i], tau, dt)));
       continue;
     }
 

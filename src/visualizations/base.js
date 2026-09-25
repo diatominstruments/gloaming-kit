@@ -32,7 +32,13 @@ export { approach, clamp01 } from '../util.js';
  *   { id: 'thomas', options: { distance: 'near' } }
  *
  * Unlike a binding, nothing compiles or validates these; a visualization reads
- * the keys it knows and falls back to its own static defaults.
+ * the keys it knows and falls back to its own static defaults. It declares
+ * the ones it reads, with their allowed values, so an editor can offer them:
+ *
+ *   static options = { distance: ['near', 'med', 'far'] };
+ *
+ * `static label` is an optional display name for editors; without one they
+ * derive a name from the id.
  *
  * Subclasses implement:
  *
@@ -49,6 +55,7 @@ export { approach, clamp01 } from '../util.js';
 export class Visualization {
   static triggers = [];
   static inputs = {};
+  static options = {};
 
   constructor({ width, height, style, bind = null, options = null }) {
     this.width = width;

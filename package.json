@@ -2,6 +2,9 @@
   "name": "gloaming-kit",
   "private": true,
   "version": "0.1.0",
+  "exports": {
+    ".": "./src/engine.js"
+  },
   "scripts": {
     "build": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=dist/gloaming-kit.js --sourcemap",
     "watch": "npm run build -- --watch",

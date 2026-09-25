@@ -35,7 +35,7 @@ export class Road extends Visualization {
 
   // --- live rungs (tune these by eye) ---
   static LIVE_EVERY = 3;    // 1 rung in N keeps tracking the music; 0 disables
-  static LIVE_TAU = 0.25;   // seconds to cover most of the way to the current
+  static LIVE_TAU = 0.15;   // seconds to cover most of the way to the current
                             // envelope. Larger = smoother and lazier; below
                             // ~0.15 it starts to look like the jumpy waveform.
   static LIVE_GAIN = 0.8;   // envelope → trace-sized displacement, so live

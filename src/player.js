@@ -191,6 +191,46 @@ class LiveSource {
 }
 
 /**
+ * ClockSource — an AudioNode someone else plays, with song position read
+ * from their clock. For hosts that make the audio themselves (a sequencer,
+ * a DAW-style app) and want the timeline to follow their transport rather
+ * than LiveSource's time-since-connect:
+ *
+ *   viz.load({ node: sequencerOutput, clock: {
+ *     get currentTime() { return seq.songTime; },   // seconds into the song
+ *     get playing() { return seq.playing; },
+ *     get duration() { return seq.duration; },       // optional
+ *     play() {}, pause() {}, seek(t) {},             // optional
+ *   } });
+ *
+ * Transport calls are passed through when the clock has them and ignored
+ * otherwise, so the host stays in charge of playback.
+ */
+class ClockSource {
+  constructor(player, { node, clock }) {
+    if (node.context !== player.ctx) {
+      throw new Error('SongPlayer: node belongs to a different AudioContext; pass it to GloamingKit as `audioContext`.');
+    }
+    this.player = player;
+    this.node = node;
+    this.clock = clock;
+    node.connect(player.output);
+  }
+
+  get duration() { return this.clock.duration ?? Infinity; }
+  get playing() { return this.clock.playing; }
+  get currentTime() { return this.clock.currentTime; }
+
+  play() { this.clock.play?.(); }
+  pause() { this.clock.pause?.(); }
+  seek(time) { this.clock.seek?.(time); }
+
+  teardown() { this.node.disconnect(this.player.output); }
+}
+
+const isClockSource = (v) => v && typeof v === 'object' && isAudioNode(v.node) && v.clock;
+
+/**
  * SongPlayer — feeds audio into the graph and exposes transport. Everything
  * reaches the speakers through an output GainNode that the Analyzer taps, so
  * the analyzer neither knows nor cares which kind of source is upstream.
@@ -204,15 +244,20 @@ class LiveSource {
  *   HTMLMediaElement  wired through a MediaElementAudioSourceNode; the
  *                   element keeps ownership of the transport
  *   AudioNode       connected as-is; no transport
+ *   { node, clock } an AudioNode whose song position comes from `clock`
+ *                   (see ClockSource)
+ *
+ * `monitor: false` keeps the output away from the speakers, for hosts that
+ * already route the same audio there themselves; the analyzer still hears it.
  *
  * Events: 'load' {duration}, 'play', 'pause', 'ended', 'seek' {time}
  */
 export class SongPlayer extends Emitter {
-  constructor(audioContext) {
+  constructor(audioContext, { monitor = true } = {}) {
     super();
     this.ctx = audioContext ?? new (window.AudioContext || window.webkitAudioContext)();
     this.output = this.ctx.createGain();
-    this.output.connect(this.ctx.destination);
+    if (monitor) this.output.connect(this.ctx.destination);
 
     // The active source strategy (BufferSource / ElementSource / LiveSource).
     // Transport state lives there, not here — this class only delegates.
@@ -228,6 +273,8 @@ export class SongPlayer extends Emitter {
       await whenMetadata(song);
     } else if (isAudioNode(song)) {
       this.source = new LiveSource(this, song);
+    } else if (isClockSource(song)) {
+      this.source = new ClockSource(this, song);
     } else {
       const arrayBuffer = song instanceof Blob
         ? await song.arrayBuffer()

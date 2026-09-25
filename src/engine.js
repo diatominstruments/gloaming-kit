@@ -28,7 +28,7 @@ const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
 export class GloamingKit extends Emitter {
   constructor({
     canvas, style = {}, timeline = [], triggers = DEFAULT_TRIGGERS, styleFade = STYLE_TAU,
-    audioContext,
+    audioContext, monitor = true,
   } = {}) {
     super();
     this.canvas = canvas;
@@ -51,7 +51,7 @@ export class GloamingKit extends Emitter {
     this.styleFade = styleFade;
     this.styleDirty = true;   // snap on the first frame and after a seek
 
-    this.player = new SongPlayer(audioContext);
+    this.player = new SongPlayer(audioContext, { monitor });
     this.analyzer = new Analyzer(this.player, { triggers });
     this.timeline = new Timeline(timeline);
 
@@ -150,6 +150,15 @@ export class GloamingKit extends Emitter {
   stopLoop() {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.rafId = null;
+  }
+
+  /** Stop drawing and let go of the audio graph. The AudioContext is left open. */
+  dispose() {
+    this.stopLoop();
+    this.player.teardown();
+    this.player.output.disconnect();
+    this.analyzer.node.disconnect();
+    this.active.clear();
   }
 
   /** One animation-loop tick: analyze, sync active set, fade, draw. */

@@ -197,6 +197,8 @@ export class FlowAttractor extends AttractorBase {
     spin:   { kind: 'level', default: 'mid' },
   };
 
+  static options = { distance: Object.keys(DISTANCE) };
+
   static TRAIL = 1400;        // positions retained in the ribbon
   // 32 substeps rather than a handful: the ring buffer then holds tens of
   // body-lengths of trajectory instead of a fraction of one, so the ribbon

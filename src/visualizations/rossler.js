@@ -42,6 +42,7 @@ import { FlowAttractor } from './attractor-base.js';
  */
 export class Rossler extends FlowAttractor {
   static id = 'rossler';
+  static label = 'Rössler';
 
   static PARAMS = [0.2, 0.2, 5.0];   // [a spiral gain, b, c fold threshold]
   // c is the zoom, and it gets a far wider band than its siblings' drifts:

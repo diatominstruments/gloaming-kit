@@ -16,13 +16,14 @@ import { Aizawa } from './aizawa.js';
 import { Rossler } from './rossler.js';
 import { Halvorsen } from './halvorsen.js';
 import { Harmonograph } from './harmonograph.js';
+import { BouncingText } from './text.js';
 
 /** Built-in visualization registry, keyed by the id used in timeline config. */
 export const registry = new Map(
   [
     EQBars, Waveform, RadialBurst, PolygonPulse, ParticleField,
     Road, Tunnel, RollingBall, Starfield,
-    Lightning, Harmonograph,
+    Lightning, Harmonograph, BouncingText,
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
   ].map((V) => [V.id, V]),
 );
@@ -49,6 +50,7 @@ export const VIZ = Object.freeze({
   STARFIELD: Starfield.id,
   LIGHTNING: Lightning.id,
   HARMONOGRAPH: Harmonograph.id,
+  TEXT: BouncingText.id,
   ATTRACTOR: DeJong.id,
   CLIFFORD: Clifford.id,
   BEDHEAD: Bedhead.id,
