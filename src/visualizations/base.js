@@ -33,9 +33,14 @@ export { approach, clamp01 } from '../util.js';
  *
  * Unlike a binding, nothing compiles or validates these; a visualization reads
  * the keys it knows and falls back to its own static defaults. It declares
- * the ones it reads, with their allowed values, so an editor can offer them:
+ * the ones it reads so an editor can offer them. An array lists the allowed
+ * values; an object describes a free-form value:
  *
- *   static options = { distance: ['near', 'med', 'far'] };
+ *   static options = {
+ *     distance:  ['near', 'med', 'far'],
+ *     text:      { kind: 'string', default: 'GLOAMING', maxLength: 32 },
+ *     threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
+ *   };
  *
  * `static label` is an optional display name for editors; without one they
  * derive a name from the id.

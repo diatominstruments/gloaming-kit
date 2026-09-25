@@ -7,10 +7,14 @@ import { Visualization, approach } from './base.js';
  *
  * `bounce` is a level slot rather than an event slot so any band or signal
  * can drive it — `bind: { bounce: 'treble' }`, `{ band: 'mid', gain: 2 }` —
- * with the threshold set per instance. The crossing uses hysteresis: after a
- * bounce the level has to fall back below `threshold * REARM` before it can
- * fire again, or a level hovering at the line would jitter the heading every
- * frame.
+ * with the threshold set per instance.
+ *
+ * After a turn it re-arms once the level dips `DIP` below the peak it reached
+ * since, not once it falls back under the threshold. Band energies are dB
+ * scaled, so on a full mix a band can sit well above any useful threshold for
+ * the whole song, easing up only a little between hits; waiting for it to
+ * drop back under the line would mean one turn and then none. `MIN_GAP`
+ * keeps a busy band from turning the text faster than the eye can follow.
  *
  * Options:
  *   text       the string to draw (default 'GLOAMING')
@@ -26,7 +30,12 @@ export class BouncingText extends Visualization {
 
   static TEXT = 'GLOAMING';
   static THRESHOLD = 0.6;
-  static REARM = 0.8;        // fraction of threshold the level must drop below
+  static options = {
+    text:      { kind: 'string', default: BouncingText.TEXT, maxLength: 32 },
+    threshold: { kind: 'number', default: BouncingText.THRESHOLD, min: 0, max: 1, step: 0.01 },
+  };
+  static DIP = 0.12;         // drop below the post-turn peak that re-arms it
+  static MIN_GAP = 0.3;      // seconds; shortest time between turns
 
   static SIZE = 0.12;        // font size, of the smaller screen dimension
   static BASE_SPEED = 0.12;  // of the screen diagonal per second, at silence
@@ -42,6 +51,8 @@ export class BouncingText extends Visualization {
     this.text = String(this.options.text ?? BouncingText.TEXT);
     this.threshold = this.options.threshold ?? BouncingText.THRESHOLD;
     this.armed = true;
+    this.peak = 0;           // highest `bounce` level since the last turn
+    this.sinceTurn = Infinity;
     this.pop = 0;
     this.speed = BouncingText.BASE_SPEED;
 
@@ -69,15 +80,21 @@ export class BouncingText extends Visualization {
 
   draw(ctx, dt) {
     const {
-      SIZE, BASE_SPEED, SPEED_GAIN, SPEED_TAU, REARM, POP, POP_DECAY,
+      SIZE, BASE_SPEED, SPEED_GAIN, SPEED_TAU, DIP, MIN_GAP, POP, POP_DECAY,
     } = BouncingText;
 
     const level = this.in('bounce');
-    if (this.armed && level >= this.threshold) {
-      this.turn();
-      this.armed = false;
-    } else if (!this.armed && level < this.threshold * REARM) {
-      this.armed = true;
+    this.sinceTurn += dt;
+    if (this.armed) {
+      if (level >= this.threshold && this.sinceTurn >= MIN_GAP) {
+        this.turn();
+        this.armed = false;
+        this.peak = level;
+        this.sinceTurn = 0;
+      }
+    } else {
+      this.peak = Math.max(this.peak, level);
+      if (level < this.peak - DIP) this.armed = true;
     }
 
     this.pop = Math.max(0, this.pop - dt * POP_DECAY);

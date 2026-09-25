@@ -330,6 +330,19 @@ falls back to its own statics for the rest. Like `bind`, an entry carrying
 `options` is a distinct instance, so the same attractor can be on screen twice
 at two different distances.
 
+A visualization declares the options it reads in `static options`, so editors
+can offer them. An array lists the allowed values; an object describes a
+free-form value with `kind: 'string'` (optional `maxLength`) or
+`kind: 'number'` (optional `min`, `max`, `step`), plus its `default`:
+
+```js
+static options = {
+  distance:  ['near', 'med', 'far'],
+  text:      { kind: 'string', default: 'GLOAMING', maxLength: 32 },
+  threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
+};
+```
+
 ### Bouncing text
 
 `text` takes `text` (the string, default `'GLOAMING'`) and `threshold` (default
@@ -340,8 +353,12 @@ signal works:
 { id: VIZ.TEXT, options: { text: 'hello', threshold: 0.5 }, bind: { bounce: 'treble' } }
 ```
 
-After a turn, the level has to drop below 80% of the threshold before it can
-fire again, so a level hovering at the line doesn't jitter the heading.
+After a turn, the level has to dip 0.12 below the peak it reached since before
+it can fire again, and turns are at least 0.3 s apart. Band levels on a full
+mix rarely fall far between hits (bass on the demo track sits at 0.78–0.95),
+so re-arming on a dip rather than a return below the threshold is what lets it
+keep turning. Mid and treble run lower — around 0.3 median on the demo track —
+so bind those with a threshold nearer 0.3–0.4.
 
 ### Camera distance
 
