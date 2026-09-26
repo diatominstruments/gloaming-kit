@@ -1,4 +1,5 @@
 import { FlowAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Aizawa — a 3D flow that winds around a rounded shell while a spindle runs
@@ -57,6 +58,9 @@ import { FlowAttractor } from './attractor-base.js';
  */
 export class Aizawa extends FlowAttractor {
   static id = 'aizawa';
+  static label = 'Aizawa';
+  static description = 'Aizawa attractor as a shell wound into tight spirals by a fast spin.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [1.0, 0.77, 0.605, -14, 0.25, 0.1];   // [a, b, c, d, e, f]
   // d's drift is scaled up with its magnitude so it stays the same few-percent

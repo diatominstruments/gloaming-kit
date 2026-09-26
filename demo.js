@@ -5,7 +5,7 @@
  * the library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { GloamingKit, registry, VIZ } = gloamingKit;
+  const { GloamingKit, catalog, VIZ } = gloamingKit;
 
   const canvas = document.getElementById('stage');
 
@@ -110,7 +110,9 @@
   // ---- timeline editor -----------------------------------------------------
 
   const timelineEl = document.getElementById('timeline');
-  const vizNames = [...registry.keys()];
+  // Grouped, labelled and described by the library, so the picker needs no
+  // knowledge of what's in it.
+  const groups = catalog();
   let windows = viz.timeline.windows.map((w) => ({
     ...w,
     visualizations: w.visualizations.map((e) => ({ ...e })),
@@ -154,25 +156,34 @@
       }
       div.appendChild(times);
 
-      const vizzes = document.createElement('div');
-      vizzes.className = 'tl-vizzes';
-      for (const name of vizNames) {
-        const label = document.createElement('label');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = w.visualizations.some((e) => e.id === name);
-        cb.addEventListener('change', () => {
-          // Entries carry a `bind` alongside the id; unchecking drops any
-          // custom routing with them, which is what the checkbox implies.
-          w.visualizations = cb.checked
-            ? [...w.visualizations, { id: name, bind: null }]
-            : w.visualizations.filter((e) => e.id !== name);
-          apply();
-        });
-        label.append(cb, name);
-        vizzes.appendChild(label);
+      for (const group of groups) {
+        const section = document.createElement('div');
+        section.className = 'tl-group';
+        const heading = document.createElement('h3');
+        heading.textContent = group.label;
+        heading.title = group.description;
+        const vizzes = document.createElement('div');
+        vizzes.className = 'tl-vizzes';
+        for (const { id, label: name, description } of group.visualizations) {
+          const label = document.createElement('label');
+          label.title = description;
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = w.visualizations.some((e) => e.id === id);
+          cb.addEventListener('change', () => {
+            // Entries carry a `bind` alongside the id; unchecking drops any
+            // custom routing with them, which is what the checkbox implies.
+            w.visualizations = cb.checked
+              ? [...w.visualizations, { id, bind: null }]
+              : w.visualizations.filter((e) => e.id !== id);
+            apply();
+          });
+          label.append(cb, name);
+          vizzes.appendChild(label);
+        }
+        section.append(heading, vizzes);
+        div.appendChild(section);
       }
-      div.appendChild(vizzes);
       timelineEl.appendChild(div);
     });
   }
@@ -180,7 +191,7 @@
   document.getElementById('add-window').addEventListener('click', () => {
     const last = windows[windows.length - 1];
     const from = last && Number.isFinite(last.to) ? last.to : 0;
-    windows.push({ from, to: Infinity, visualizations: [{ id: vizNames[0], bind: null }] });
+    windows.push({ from, to: Infinity, visualizations: [{ id: groups[0].visualizations[0].id, bind: null }] });
     renderTimeline();
     apply();
   });

@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -7,6 +8,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class PolygonPulse extends Visualization {
   static id = 'polygon-pulse';
+  static label = 'Polygon Pulse';
+  static description = 'Rotating polygon whose radius pulses and side count morphs; hits kick the spin.';
+  static category = CATEGORY.CLASSIC;
   static inputs = {
     kick:  { kind: 'event', default: TRIGGER.SNARE },
     punch: { kind: 'event', default: TRIGGER.BASS },

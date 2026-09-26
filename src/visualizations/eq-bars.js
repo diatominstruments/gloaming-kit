@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * EQBars — classic EQ display. Log-spaced bars across the spectrum so the
@@ -7,6 +8,8 @@ import { Visualization } from './base.js';
 export class EQBars extends Visualization {
   static id = 'eq-bars';
   static label = 'EQ Bars';
+  static description = 'Spectrum as log-spaced bars with a fast attack and slow decay.';
+  static category = CATEGORY.CLASSIC;
 
   constructor(opts) {
     super(opts);

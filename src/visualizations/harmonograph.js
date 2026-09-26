@@ -1,4 +1,5 @@
 import { Visualization, approach } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -15,6 +16,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class Harmonograph extends Visualization {
   static id = 'harmonograph';
+  static label = 'Harmonograph';
+  static description = 'Damped Lissajous figure that snaps to new frequency ratios on hits.';
+  static category = CATEGORY.CHAOS;
   static inputs = {
     snap:  { kind: 'event', default: TRIGGER.SNARE },
     swell: { kind: 'event', default: TRIGGER.BASS },

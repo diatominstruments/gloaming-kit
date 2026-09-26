@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -8,6 +9,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class RadialBurst extends Visualization {
   static id = 'radial-burst';
+  static label = 'Radial Burst';
+  static description = 'Hits launch expanding rings and scatter ticks around a breathing core.';
+  static category = CATEGORY.CLASSIC;
   static inputs = {
     ring:    { kind: 'event', default: TRIGGER.BASS },
     scatter: { kind: 'event', default: TRIGGER.HIHAT },

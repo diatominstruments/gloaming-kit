@@ -1,4 +1,5 @@
 import { Visualization, approach } from './base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * BouncingText — a string drifting around the screen like an idle DVD logo.
@@ -23,6 +24,8 @@ import { Visualization, approach } from './base.js';
 export class BouncingText extends Visualization {
   static id = 'text';
   static label = 'Bouncing Text';
+  static description = 'A string drifting around the screen, turning onto a new heading on each beat.';
+  static category = CATEGORY.CLASSIC;
   static inputs = {
     bounce: { kind: 'level', default: 'bass' },
     speed:  { kind: 'level', default: 'rms' },

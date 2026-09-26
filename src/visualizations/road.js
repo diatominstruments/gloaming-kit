@@ -1,4 +1,5 @@
 import { Visualization, approach } from './base.js';
+import { CATEGORY } from './categories.js';
 import { sampleTrace, sampleEnvelope, expandEnvelope, signsOf } from './shape.js';
 
 /**
@@ -22,6 +23,9 @@ import { sampleTrace, sampleEnvelope, expandEnvelope, signsOf } from './shape.js
  */
 export class Road extends Visualization {
   static id = 'road';
+  static label = 'Road';
+  static description = 'Rungs captured from the waveform fly toward the viewer from the horizon.';
+  static category = CATEGORY.MOTION;
 
   static inputs = {
     swell: { kind: 'level', default: 'rms' },

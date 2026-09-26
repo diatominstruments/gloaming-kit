@@ -34,16 +34,21 @@ export { approach, clamp01 } from '../util.js';
  * Unlike a binding, nothing compiles or validates these; a visualization reads
  * the keys it knows and falls back to its own static defaults. It declares
  * the ones it reads so an editor can offer them. An array lists the allowed
- * values; an object describes a free-form value:
+ * values (shorthand for `kind: 'enum'` with no declared default); an object
+ * describes the value in full:
  *
  *   static options = {
- *     distance:  ['near', 'med', 'far'],
+ *     distance:  { kind: 'enum', values: ['near', 'med', 'far'], default: 'med' },
  *     text:      { kind: 'string', default: 'GLOAMING', maxLength: 32 },
  *     threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
  *   };
  *
- * `static label` is an optional display name for editors; without one they
- * derive a name from the id.
+ * Descriptive metadata, all optional, for pickers and editors (see describe()
+ * and catalog() in index.js, which read it):
+ *
+ *   static label       = 'Radial Burst';   // display name; derived from id if unset
+ *   static description = 'One line on what it looks like and reacts to.';
+ *   static category    = CATEGORY.CLASSIC; // see categories.js
  *
  * Subclasses implement:
  *

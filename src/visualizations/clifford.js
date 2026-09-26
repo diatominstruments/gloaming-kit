@@ -1,4 +1,5 @@
 import { PointCloudAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Clifford — a Clifford Pickover attractor, close kin to de Jong but with a
@@ -14,6 +15,9 @@ import { PointCloudAttractor } from './attractor-base.js';
  */
 export class Clifford extends PointCloudAttractor {
   static id = 'clifford';
+  static label = 'Clifford';
+  static description = 'Clifford attractor as a layered, filamentary point cloud.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [-1.4, 1.6, 1.0, 0.7];
   static DRIFT = 0.3;

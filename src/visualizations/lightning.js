@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -57,6 +58,9 @@ const subdivide = (pts, displace, passes, roughness) => {
 
 export class Lightning extends Visualization {
   static id = 'lightning';
+  static label = 'Lightning';
+  static description = 'Branching bolts that strike and grow outward, with a flash on big hits.';
+  static category = CATEGORY.CHAOS;
   static inputs = {
     strike:   { kind: 'event', default: TRIGGER.BASS },
     offshoot: { kind: 'event', default: TRIGGER.SNARE },

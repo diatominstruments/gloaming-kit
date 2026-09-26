@@ -1,4 +1,5 @@
 import { FlowAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Rössler — a 3D flow built from a single fold, and the flattest thing in
@@ -43,6 +44,8 @@ import { FlowAttractor } from './attractor-base.js';
 export class Rossler extends FlowAttractor {
   static id = 'rossler';
   static label = 'Rössler';
+  static description = 'Rössler attractor as a flat disc with a lifted fold that swells and recedes.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [0.2, 0.2, 5.0];   // [a spiral gain, b, c fold threshold]
   // c is the zoom, and it gets a far wider band than its siblings' drifts:

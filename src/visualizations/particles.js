@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -26,6 +27,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class ParticleField extends Visualization {
   static id = 'particles';
+  static label = 'Particles';
+  static description = 'Drifting, twinkling particles that hits shove outward.';
+  static category = CATEGORY.CLASSIC;
 
   static inputs = {
     shove:   { kind: 'event', default: TRIGGER.BASS },

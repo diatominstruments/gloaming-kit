@@ -1,4 +1,5 @@
 import { PointCloudAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Bedhead — an Ivan Emrich attractor:
@@ -14,6 +15,9 @@ import { PointCloudAttractor } from './attractor-base.js';
  */
 export class Bedhead extends PointCloudAttractor {
   static id = 'bedhead';
+  static label = 'Bedhead';
+  static description = 'Bedhead attractor as asymmetric, swept whorls.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [-0.81, -0.92];
   static DRIFT = 0.12;

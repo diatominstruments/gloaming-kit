@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -11,6 +12,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class Starfield extends Visualization {
   static id = 'starfield';
+  static label = 'Starfield';
+  static description = 'Fly-through with motion streaks; hits swell the stars.';
+  static category = CATEGORY.MOTION;
 
   static inputs = {
     swell: { kind: 'event', default: TRIGGER.BASS },

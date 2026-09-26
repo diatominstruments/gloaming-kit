@@ -1,4 +1,5 @@
 import { PointCloudAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Attractor — a Peter de Jong strange attractor rendered as a drifting
@@ -13,6 +14,8 @@ import { PointCloudAttractor } from './attractor-base.js';
 export class DeJong extends PointCloudAttractor {
   static id = 'attractor';
   static label = 'De Jong';
+  static description = 'De Jong attractor as a point cloud; hits jolt it into a new shape.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [1.4, -2.3, 2.4, -2.1];
   static DRIFT = 0.35;

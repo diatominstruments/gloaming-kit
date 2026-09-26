@@ -1,4 +1,5 @@
 import { Visualization, approach } from './base.js';
+import { CATEGORY } from './categories.js';
 import { sampleTrace, sampleEnvelope, expandEnvelope, signsOf } from './shape.js';
 
 /** Crossfade the tail into the head so the ring closes without a seam. */
@@ -32,6 +33,9 @@ const closeSeam = (shape, blend = 8) => {
  */
 export class Tunnel extends Visualization {
   static id = 'tunnel';
+  static label = 'Tunnel';
+  static description = 'Spinning tunnel of rings extruded from the waveform rushing past.';
+  static category = CATEGORY.MOTION;
 
   static inputs = {
     spin: { kind: 'level', default: 'treble' },

@@ -1,4 +1,5 @@
 import { Visualization, approach } from './base.js';
+import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
@@ -25,6 +26,9 @@ import { TRIGGER } from '../analyzer.js';
  */
 export class RollingBall extends Visualization {
   static id = 'rolling-ball';
+  static label = 'Rolling Ball';
+  static description = 'Wireframe sphere tumbling in place; loudness sets the roll and snares swerve it.';
+  static category = CATEGORY.CLASSIC;
   static inputs = {
     swerve: { kind: 'event', default: TRIGGER.SNARE },
     speed:  { kind: 'level', default: 'rms' },

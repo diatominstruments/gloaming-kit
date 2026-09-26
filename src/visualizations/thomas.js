@@ -1,4 +1,5 @@
 import { FlowAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Thomas — René Thomas's cyclically symmetric attractor, a 3D flow:
@@ -27,6 +28,9 @@ import { FlowAttractor } from './attractor-base.js';
  */
 export class Thomas extends FlowAttractor {
   static id = 'thomas';
+  static label = 'Thomas';
+  static description = 'Thomas attractor as a rotating 3D ribbon, viewed from inside its lattice.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [0.18, 1.0];       // [b damping, ω lattice frequency]
   static DRIFT = [0.05, 0.09];       // b ∈ [0.13, 0.23], ω ∈ [0.91, 1.09]

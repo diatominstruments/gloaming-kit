@@ -1,4 +1,5 @@
 import { Visualization } from './base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Waveform — oscilloscope trace of the time-domain signal, with the trace
@@ -6,6 +7,9 @@ import { Visualization } from './base.js';
  */
 export class Waveform extends Visualization {
   static id = 'waveform';
+  static label = 'Waveform';
+  static description = 'Oscilloscope trace that grows taller with loudness.';
+  static category = CATEGORY.CLASSIC;
 
   static inputs = {
     amplitude: { kind: 'level', default: 'rms' },

@@ -197,7 +197,11 @@ export class FlowAttractor extends AttractorBase {
     spin:   { kind: 'level', default: 'mid' },
   };
 
-  static options = { distance: Object.keys(DISTANCE) };
+  // A getter so `this` is the subclass, and the declared default follows each
+  // system's own DISTANCE rather than reporting the base's.
+  static get options() {
+    return { distance: { kind: 'enum', values: Object.keys(DISTANCE), default: this.DISTANCE } };
+  }
 
   static TRAIL = 1400;        // positions retained in the ribbon
   // 32 substeps rather than a handful: the ring buffer then holds tens of

@@ -275,5 +275,7 @@ export class GloamingKit extends Emitter {
 }
 
 export { Visualization } from './visualizations/base.js';
-export { register, registry, VIZ } from './visualizations/index.js';
+export {
+  register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES,
+} from './visualizations/index.js';
 export { BANDS, TRIGGER, DEFAULT_TRIGGERS } from './analyzer.js';

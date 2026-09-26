@@ -56,7 +56,7 @@ import { GloamingKit, VIZ, TRIGGER } from './src/engine.js';
 Or from the bundle, via the global:
 
 ```js
-const { GloamingKit, registry, VIZ, TRIGGER, Visualization, register } = gloamingKit;
+const { GloamingKit, registry, VIZ, TRIGGER, Visualization, register, catalog, describe } = gloamingKit;
 ```
 
 Importing from source, IDEs infer everything and autocomplete works out of
@@ -212,6 +212,11 @@ const viz = new GloamingKit({ canvas, audioContext: myCtx, timeline: [...] });
 
 ## Built-in visualizations
 
+Grouped here by the categories the library reports through `catalog()` (see
+[Metadata](#metadata)).
+
+**Classic** — spectrum, waveform and shape displays that react in place.
+
 | id | what it does |
 |----|--------------|
 | `eq-bars` | spectrum as log-spaced bars, fast attack / slow decay |
@@ -222,7 +227,7 @@ const viz = new GloamingKit({ canvas, audioContext: myCtx, timeline: [...] });
 | `rolling-ball` | wireframe sphere tumbling in place — loudness sets the roll rate, bass swells it, and snare hits swerve it onto a new heading |
 | `text` | a string drifting around the screen and reflecting off the edges; each time `bounce` rises past a threshold it turns onto a new heading with a pop. Takes `text` and `threshold` options |
 
-**Motion set** — perspective visuals that put the viewer in motion. Travel
+**Motion** — perspective visuals that put the viewer in motion. Travel
 speed is a fixed constant in all three (tune it via the class's `SPEED`
 static): audio-driven speed makes the approach visibly stutter, because
 loudness swings frame to frame. The sound shapes what you fly past, not how
@@ -234,7 +239,9 @@ fast you fly.
 | `tunnel` | rings extruded from the waveform at spawn rush past; the tunnel spins, with the spin rate smoothed |
 | `starfield` | fly-through with motion streaks; hits swell star size |
 
-**Chaos set** — recursive and chaotic geometry steered by the sound:
+**Chaos** — branching and recursive figures steered by the sound. The
+attractors (`attractor` through `halvorsen`) are reported as their own
+**Attractors** category, so a picker can list them apart:
 
 | id | what it does |
 |----|--------------|
@@ -331,13 +338,14 @@ falls back to its own statics for the rest. Like `bind`, an entry carrying
 at two different distances.
 
 A visualization declares the options it reads in `static options`, so editors
-can offer them. An array lists the allowed values; an object describes a
-free-form value with `kind: 'string'` (optional `maxLength`) or
-`kind: 'number'` (optional `min`, `max`, `step`), plus its `default`:
+can offer them. Each is an object with a `kind` and a `default`: `'enum'`
+(with `values`), `'string'` (optional `maxLength`) or `'number'` (optional
+`min`, `max`, `step`). A bare array is shorthand for an enum with no declared
+default:
 
 ```js
 static options = {
-  distance:  ['near', 'med', 'far'],
+  distance:  { kind: 'enum', values: ['near', 'med', 'far'], default: 'med' },
   text:      { kind: 'string', default: 'GLOAMING', maxLength: 32 },
   threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
 };
@@ -378,6 +386,48 @@ the projection can magnify anything — on Thomas at `near`, over a full
 revolution, the longest segment drawn goes from 3.1× the canvas diagonal at
 `NEAR = 0.06` to 0.4× at 0.35. At `med` and `far` nothing is ever clipped.
 
+## Metadata
+
+Every visualization carries descriptive metadata alongside its routing and
+options, so a client can build a picker or an editor without hard-coding
+anything about the library's contents:
+
+```js
+static label       = 'Radial Burst';
+static description = 'Hits launch expanding rings and scatter ticks around a breathing core.';
+static category    = CATEGORY.CLASSIC;
+```
+
+All three are optional. Without a `label` one is derived from the id
+(`'my-strobe'` → `'My Strobe'`); without a `category` it files under `other`.
+
+Two functions read it back as plain, JSON-safe copies:
+
+```js
+describe('thomas');
+// {
+//   id: 'thomas', label: 'Thomas', category: 'attractors',
+//   description: 'Thomas attractor as a rotating 3D ribbon, …',
+//   inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
+//   options: [{ name: 'distance', kind: 'enum', values: ['near', 'med', 'far'], default: 'near' }],
+// }
+
+catalog();
+// [{ id: 'classic', label: 'Classic', description: '…', visualizations: [ /* describe() of each */ ] },
+//  { id: 'motion', … }, { id: 'chaos', … }, { id: 'attractors', … }]
+```
+
+`catalog()` lists categories in `CATEGORIES` order and visualizations in
+registration order, skipping empty categories. It includes anything added via
+`register()`; a custom category id that isn't in `CATEGORIES` gets a group of
+its own (labelled from the id) after the built-in ones, with `other` always
+last. `CATEGORY` holds the ids as constants, like `VIZ`. The demo's timeline
+editor is built entirely from `catalog()`.
+
+Enum defaults are reported per class, so `describe()` gives `thomas` a default
+`distance` of `near` and the other flow attractors `med` — the value each will
+actually use when the option is left out.
+
 ## Window styles
 
 Any window may carry a partial `style` that overrides the base style while it
@@ -404,6 +454,7 @@ import { Visualization, TRIGGER, register } from './src/engine.js';
 
 class Strobe extends Visualization {
   static id = 'strobe';
+  static description = 'Full-screen flash on every snare.';   // optional metadata
   static inputs = {
     hit:  { kind: 'event', default: TRIGGER.SNARE },
     tint: { kind: 'level', default: { band: 'treble', smooth: 0.1 } },

@@ -1,4 +1,5 @@
 import { FlowAttractor } from './attractor-base.js';
+import { CATEGORY } from './categories.js';
 
 /**
  * Halvorsen — a cyclically symmetric 3D flow:
@@ -31,6 +32,9 @@ import { FlowAttractor } from './attractor-base.js';
  */
 export class Halvorsen extends FlowAttractor {
   static id = 'halvorsen';
+  static label = 'Halvorsen';
+  static description = 'Halvorsen attractor coiled into three horns running off the frame.';
+  static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [1.42];
   static DRIFT = [0.06];
