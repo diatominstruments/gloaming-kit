@@ -17,7 +17,7 @@ const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
  *     canvas,
  *     style: { background: '#0a0a12', lineColor: '#7fffd4', ... },
  *     timeline: [{ from: 0, to: 60, visualizations: ['eq-bars'] }],
- *     triggers: [{ name: TRIGGER.BASS, band: [40, 130], threshold: 0.55, cooldown: 0.15 }],
+ *     triggers: [{ name: TRIGGER.BASS, band: [40, 130], threshold: 0.6, cooldown: 0.15 }],
  *   });
  *   await viz.load(fileOrUrl);
  *   viz.play();
@@ -279,3 +279,4 @@ export {
   register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES,
 } from './visualizations/index.js';
 export { BANDS, TRIGGER, DEFAULT_TRIGGERS } from './analyzer.js';
+export { impact } from './util.js';

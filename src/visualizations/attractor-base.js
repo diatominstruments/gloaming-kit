@@ -1,4 +1,4 @@
-import { Visualization, approach } from './base.js';
+import { Visualization, approach, impact } from './base.js';
 import { TRIGGER } from '../analyzer.js';
 
 /** Expand a scalar static into one entry per parameter. */
@@ -8,7 +8,7 @@ const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill
  * AttractorBase — shared machinery for chaotic-system visualizations.
  *
  * Every attractor here is "a set of parameters, iterated": the parameters
- * orbit slowly (mid energy sets the drift speed), bass hits jolt them to a
+ * orbit slowly (mid intensity sets the drift speed), bass hits jolt them to a
  * nearby region of parameter space to morph the figure, and treble sets
  * brightness. That part is identical whether the system is a 2D map drawn
  * as a point cloud or a 3D flow drawn as a ribbon, so it lives here and the
@@ -29,15 +29,20 @@ const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill
 export class AttractorBase extends Visualization {
   static inputs = {
     jolt:  { kind: 'event', default: TRIGGER.BASS },
-    drift: { kind: 'level', default: 'mid' },
-    glow:  { kind: 'level', default: { band: 'treble', smooth: 0.08 } },
+    drift: { kind: 'level', default: { intensity: 'mid' } },
+    // Mostly how loud the treble is, with a little of its movement on top so
+    // the figure still glints on hats in a quiet passage.
+    glow:  { kind: 'level', default: {
+      sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],
+      smooth: 0.08,
+    } },
   };
 
   static PARAMS = [];
   static DRIFT = 0;
   static JOLT = 0;
-  static DRIFT_RATE = [0.05, 0.5];   // [idle, added per unit of mid energy]
-  static ALPHA = [0.1, 2.35];        // [floor, gain] applied to treble
+  static DRIFT_RATE = [0.05, 0.5];   // [idle, added per unit of mid intensity]
+  static ALPHA = [0.2, 1];           // [floor, gain] applied to `glow`
   static JOLT_DECAY = 1.8;
 
   constructor(opts) {
@@ -50,7 +55,8 @@ export class AttractorBase extends Visualization {
     this.joltAmp = perParam(this.constructor.JOLT, n);
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
+    const strength = impact(data);
     for (let i = 0; i < this.jolt.length; i++) {
       // Clamped, because hits can land faster than the decay clears them and
       // some systems diverge if the parameters wander far enough.
@@ -63,7 +69,7 @@ export class AttractorBase extends Visualization {
   /** Advance the parameter drift and jolt decay. Fills `this.params`. */
   updateParams(dt) {
     const { PARAMS, DRIFT_RATE, JOLT_DECAY } = this.constructor;
-    // Integrated, not assigned — drift energy sets how fast the parameters
+    // Integrated, not assigned — drift intensity sets how fast the parameters
     // travel, so a loud frame speeds the morph instead of teleporting it.
     this.t += dt * (DRIFT_RATE[0] + this.in('drift') * DRIFT_RATE[1]);
     const decay = Math.exp(-dt * JOLT_DECAY);
@@ -193,8 +199,8 @@ const DISTANCE = { near: 0.15, med: 1, far: 1.6 };
 export class FlowAttractor extends AttractorBase {
   static inputs = {
     ...AttractorBase.inputs,
-    travel: { kind: 'level', default: 'mid' },
-    spin:   { kind: 'level', default: 'mid' },
+    travel: { kind: 'level', default: { intensity: 'mid' } },
+    spin:   { kind: 'level', default: { intensity: 'mid' } },
   };
 
   // A getter so `this` is the subclass, and the declared default follows each
@@ -212,7 +218,7 @@ export class FlowAttractor extends AttractorBase {
   // are taken per frame — so it is the cheap half of "show more structure".
   static SUBSTEPS = 32;
   static H = 0.05;            // base step size, in the system's own time units
-  static SPEED = [1, 1.6];    // [idle, per unit of mid energy] multiplier on H
+  static SPEED = [1, 1.6];    // [idle, per unit of `travel`] multiplier on H
   // Ceiling on the *product* of H and everything that scales it. H is the
   // expensive half: too large a step and RK4 aliases the curve into facets,
   // and past a system-specific threshold it diverges outright — Rössler blows
@@ -237,7 +243,7 @@ export class FlowAttractor extends AttractorBase {
   // the camera either way. At `med` and `far` no sample ever comes close.
   static NEAR = 0.35;
   static CHUNKS = 8;          // ribbon is stroked in this many fading pieces
-  static SPIN = [0.25, 0.6];  // [idle, per unit of mid energy] yaw rate, rad/s
+  static SPIN = [0.25, 0.6];  // [idle, per unit of `spin`] yaw rate, rad/s
   static LIMIT = 1e4;
 
   // Draw-time beat response, all of it rigid — a hit whips the yaw and
@@ -286,8 +292,9 @@ export class FlowAttractor extends AttractorBase {
     // Bass surges travel speed as well as nudging parameters: on a system
     // this stiff, parameter jolts alone are too subtle to read as a hit.
     // The kick drives the rigid beat response — yaw whip and swell.
-    this.surge = Math.max(this.surge, data.strength);
-    this.kick = Math.max(this.kick, data.strength);
+    const size = impact(data);
+    this.surge = Math.max(this.surge, size);
+    this.kick = Math.max(this.kick, size);
   }
 
   /** One classical RK4 step of size `h`, advancing `this.state` in place. */
@@ -329,7 +336,7 @@ export class FlowAttractor extends AttractorBase {
     // Exponential, not linear: a linear ramp ends in a corner where the whip
     // stops dead, which reads as snapping back. This eases out instead.
     this.kick *= Math.exp(-dt * KICK_DECAY);
-    // Clamped, not just scaled: mid energy and a bass surge together multiply
+    // Clamped, not just scaled: mid intensity and a bass surge together multiply
     // the step by up to ~4, which past H_LIMIT stops being "faster" and starts
     // being a different, wrong curve — or no curve at all.
     const h = Math.min(H_LIMIT, H * (SPEED[0] + this.in('travel') * SPEED[1] + this.surge * 1.5));
@@ -352,7 +359,7 @@ export class FlowAttractor extends AttractorBase {
     this.yaw += (this.spin + this.kick * KICK_SPIN) * dt;
     const pitch = 0.35 + Math.sin(this.t * 0.4) * 0.18;
 
-    // Idle corkscrew rides `this.t`, which advances with mid energy, so the
+    // Idle corkscrew rides `this.t`, which advances with mid intensity, so the
     // shape keeps writhing between hits and writhes faster when the track is
     // busy. Hits swell the figure uniformly — never shear it.
     const twist = TWIST * Math.sin(this.t * 0.55);

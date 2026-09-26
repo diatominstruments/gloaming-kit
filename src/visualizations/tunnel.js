@@ -16,7 +16,7 @@ const closeSeam = (shape, blend = 8) => {
  * Tunnel — rings rush toward the viewer. Each ring is extruded from the
  * waveform at the moment it spawned, so the tunnel walls are a rolling
  * record of the sound. The whole tunnel slowly rotates, faster when the
- * high end is busy.
+ * high end is loud.
  *
  * Every LIVE_EVERY'th ring is *live*: rather than keeping its birth snapshot
  * it goes on tracking the music for its whole flight, easing toward the
@@ -38,7 +38,7 @@ export class Tunnel extends Visualization {
   static category = CATEGORY.MOTION;
 
   static inputs = {
-    spin: { kind: 'level', default: 'treble' },
+    spin: { kind: 'level', default: { intensity: 'treble' } },
   };
 
   static Z_NEAR = 0.14;

@@ -1,5 +1,5 @@
 import { BANDS } from './analyzer.js';
-import { approach, clamp01 } from './util.js';
+import { approach, clamp01, impact } from './util.js';
 
 /**
  * Signals — the routing layer behind input slots.
@@ -8,7 +8,7 @@ import { approach, clamp01 } from './util.js';
  * captured in a closure. Two decisions keep this small:
  *
  *  - Everything is continuous. Triggers are discrete, so they pass through an
- *    envelope at the boundary: a hit jumps the value to its strength, which
+ *    envelope at the boundary: a hit jumps the value to its impact, which
  *    then decays. Downstream there is only one kind of thing, so combining a
  *    bass hit with a treble level is ordinary arithmetic.
  *
@@ -22,6 +22,11 @@ import { approach, clamp01 } from './util.js';
  *
  *   'mid'                                  a band, by name
  *   'rms'                                  overall loudness
+ *   { relative: 'bass' }                   band (or 'rms') against its recent
+ *                                          floor and peaks: hits read high in
+ *                                          quiet passages and loud alike
+ *   { intensity: 'bass' }                  slow absolute loudness of a band
+ *                                          (or 'rms'): how big to react
  *   0.5                                    a constant
  *   { band: 'treble', gain: 1.4 }          shaped
  *   { trigger: 'bass', decay: 4 }          envelope on a trigger
@@ -51,16 +56,26 @@ const band = (name, path) => {
 
 const rms = () => (frame) => frame?.level ?? 0;
 
+/** A per-band field of the frame that also carries 'rms' (relative, intensity). */
+const dynamic = (field, name, path) => {
+  if (!(name in BANDS) && name !== 'rms') {
+    warn(path, `unknown band '${name}' — expected 'rms' or one of ${Object.keys(BANDS).join(', ')}`);
+    return constant(0);
+  }
+  return (frame) => frame?.[field]?.[name] ?? 0;
+};
+
 /**
- * Envelope follower on a trigger: rises instantly to the strength of a hit,
- * falls at `decay` per second. This is what makes a discrete event usable
+ * Envelope follower on a trigger: rises instantly to the impact of a hit
+ * (its strength scaled by the band's intensity, see util.js), falls at
+ * `decay` per second. This is what makes a discrete event usable
  * anywhere a continuous level is.
  */
 const envelope = (name, decay) => {
   let value = 0;
   return (frame, dt, events) => {
     const hit = events?.get(name);
-    if (hit) value = Math.max(value, hit.strength);
+    if (hit) value = Math.max(value, impact(hit));
     value = Math.max(0, value - dt * decay);
     return value;
   };
@@ -90,6 +105,10 @@ export function compileLevel(spec, path = 'input') {
   } else if (typeof spec === 'object') {
     if (spec.band !== undefined) {
       signal = band(spec.band, path);
+    } else if (spec.relative !== undefined) {
+      signal = dynamic('relative', spec.relative, path);
+    } else if (spec.intensity !== undefined) {
+      signal = dynamic('intensity', spec.intensity, path);
     } else if (spec.trigger !== undefined) {
       signal = envelope(spec.trigger, spec.decay ?? 3);
     } else if (spec.const !== undefined) {
@@ -99,7 +118,7 @@ export function compileLevel(spec, path = 'input') {
     } else if (spec.max !== undefined) {
       signal = combine(spec.max, path, Math.max, 0);
     } else {
-      warn(path, `no source in spec (expected band, trigger, const, sum or max)`);
+      warn(path, `no source in spec (expected band, relative, intensity, trigger, const, sum or max)`);
       signal = constant(0);
     }
 

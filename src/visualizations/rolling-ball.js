@@ -1,4 +1,4 @@
-import { Visualization, approach } from './base.js';
+import { Visualization, approach, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
@@ -31,8 +31,8 @@ export class RollingBall extends Visualization {
   static category = CATEGORY.CLASSIC;
   static inputs = {
     swerve: { kind: 'event', default: TRIGGER.SNARE },
-    speed:  { kind: 'level', default: 'rms' },
-    swell:  { kind: 'level', default: 'bass' },
+    speed:  { kind: 'level', default: { intensity: 'rms' } },
+    swell:  { kind: 'level', default: { relative: 'bass' } },
   };
 
   static LATITUDES = 7;      // rings between the poles
@@ -102,14 +102,16 @@ export class RollingBall extends Visualization {
     return lines;
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
     if (slot !== 'swerve') return;
+    const { strength } = data;
     const { MIN_TURN, MAX_TURN } = RollingBall;
-    // Harder hits swing the ball further round. The target is nudged rather
-    // than set, so back-to-back hits compound into a tight curve.
+    // More prominent hits swing the ball further round; louder ones surge it
+    // harder. The target is nudged rather than set, so back-to-back hits
+    // compound into a tight curve.
     const turn = MIN_TURN + strength * (MAX_TURN - MIN_TURN);
     this.targetHeading += (Math.random() < 0.5 ? -1 : 1) * turn;
-    this.kick = Math.max(this.kick, strength);
+    this.kick = Math.max(this.kick, impact(data));
   }
 
   /**

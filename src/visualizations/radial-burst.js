@@ -1,11 +1,12 @@
-import { Visualization } from './base.js';
+import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
  * RadialBurst — trigger-driven. Bass hits launch expanding rings from the
- * center; hihat hits scatter short radial ticks around the rim. Ring size
- * and tick count scale with hit strength.
+ * center; hihat hits scatter short radial ticks around the rim. Ring speed
+ * and tick count scale with each hit's impact — how prominent it is, scaled
+ * by how loud the band is — so a quiet passage still rings, just smaller.
  */
 export class RadialBurst extends Visualization {
   static id = 'radial-burst';
@@ -15,7 +16,7 @@ export class RadialBurst extends Visualization {
   static inputs = {
     ring:    { kind: 'event', default: TRIGGER.BASS },
     scatter: { kind: 'event', default: TRIGGER.HIHAT },
-    core:    { kind: 'level', default: 'bass' },
+    core:    { kind: 'level', default: { relative: 'bass' } },
   };
 
   constructor(opts) {
@@ -24,7 +25,8 @@ export class RadialBurst extends Visualization {
     this.ticks = []; // { angle, dist, life }
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
+    const strength = impact(data);
     if (slot === 'ring') {
       this.rings.push({ r: 10, speed: 220 + strength * 380, life: 1 });
     } else if (slot === 'scatter') {

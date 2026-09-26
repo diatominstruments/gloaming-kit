@@ -1,4 +1,4 @@
-import { Visualization, approach } from './base.js';
+import { Visualization, approach, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
@@ -22,10 +22,12 @@ export class Harmonograph extends Visualization {
   static inputs = {
     snap:  { kind: 'event', default: TRIGGER.SNARE },
     swell: { kind: 'event', default: TRIGGER.BASS },
+    // Absolute on purpose: draw() compares it against its own moving average,
+    // which already makes it relative.
     twist: { kind: 'level', default: 'mid' },
     // Smoothing lives in the binding rather than in draw(): the raw band
     // would jitter the figure's scale frame to frame.
-    size:  { kind: 'level', default: { band: 'bass', smooth: 0.12 } },
+    size:  { kind: 'level', default: { relative: 'bass', smooth: 0.12 } },
   };
 
   static RATIOS = [[1, 2], [2, 3], [3, 4], [3, 5], [4, 5], [5, 6]];
@@ -48,13 +50,13 @@ export class Harmonograph extends Visualization {
     this.rotation = 0;
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
     if (slot === 'snap') {
       this.prevRatio = this.currentRatio();
       this.ratioIndex = (this.ratioIndex + 1 + Math.floor(Math.random() * (Harmonograph.RATIOS.length - 1))) % Harmonograph.RATIOS.length;
       this.morph = 0;
     }
-    if (slot === 'swell') this.swell = Math.max(this.swell, strength);
+    if (slot === 'swell') this.swell = Math.max(this.swell, impact(data));
   }
 
   currentRatio() {

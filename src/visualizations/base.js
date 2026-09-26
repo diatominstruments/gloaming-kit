@@ -1,6 +1,6 @@
 import { compileLevel } from '../signals.js';
 
-export { approach, clamp01 } from '../util.js';
+export { approach, clamp01, impact } from '../util.js';
 
 /**
  * Visualization — base class for everything in the library.

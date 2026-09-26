@@ -1,4 +1,4 @@
-import { Visualization } from './base.js';
+import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
@@ -33,7 +33,11 @@ export class ParticleField extends Visualization {
 
   static inputs = {
     shove:   { kind: 'event', default: TRIGGER.BASS },
-    twinkle: { kind: 'level', default: 'treble' },
+    // Mostly how loud the treble is, plus a little of its movement so hats
+    // still sparkle in a quiet passage. Same mix as the attractors' glow.
+    twinkle: { kind: 'level', default: {
+      sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],
+    } },
   };
 
   static COUNT = 110;
@@ -81,8 +85,9 @@ export class ParticleField extends Visualization {
     };
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
     if (slot !== 'shove') return;
+    const strength = impact(data);
     const { SHOVE, SWIRL } = ParticleField;
     const cx = this.width / 2;
     const cy = this.height / 2;

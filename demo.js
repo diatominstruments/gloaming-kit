@@ -37,7 +37,7 @@
       // Same visualization, rewired: its ring bursts follow the hihat and its
       // core breathes with treble instead of bass.
       { from: 54, to: 64, visualizations: [
-        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: 'treble' } },
+        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: { relative: 'treble' } } },
       ] },
       { from: 64, to: Infinity, visualizations: [VIZ.HARMONOGRAPH, VIZ.PARTICLES] },
     ],

@@ -2,7 +2,7 @@
 
 A small framework for building music visualizations with Canvas 2D and the
 WebAudio API. A song plays in the browser, an analyzer emits per-frame band
-energies and threshold-based trigger events (bass hits, snare, hihat), and a
+energies and adaptive trigger events (bass hits, snare, hihat), and a
 timeline decides which visualizations are on screen for each time window of
 the song — how each one is wired to the audio, and what palette it wears.
 
@@ -87,9 +87,11 @@ SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visu
 - **Analyzer** ([src/analyzer.js](src/analyzer.js)) — taps the player through
   an `AnalyserNode`. Each tick it emits a `frame` event with coarse band
   energies (`subBass`, `bass`, `lowMid`, `mid`, `highMid`, `treble`, each
-  0–1), overall `level`, and the raw `spectrum`/`waveform` arrays. Configured
-  triggers fire `trigger:<name>` events on a rising edge over a threshold,
-  with a cooldown and a 0–1 `strength` for scaling the visual response.
+  0–1), overall `level`, per-band `relative` and `intensity` (see
+  [Dynamics](#dynamics)), and the raw `spectrum`/`waveform` arrays.
+  Configured triggers fire `trigger:<name>` events when a band jumps out of
+  its recent dynamics, with a cooldown, a relative 0–1 `strength` and an
+  absolute 0–1 `intensity`.
 - **Timeline** ([src/timeline.js](src/timeline.js)) — maps song time to the
   active visualizations, each with an optional routing override and an
   optional per-window style. Windows may overlap (union wins).
@@ -137,9 +139,9 @@ const viz = new GloamingKit({
   styleFade: 0.3,   // optional; seconds, time constant for style transitions
   // optional — these are the defaults:
   triggers: [
-    { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.55, cooldown: 0.15 },
-    { name: TRIGGER.SNARE, band: [1500, 4000],  threshold: 0.45, cooldown: 0.15 },
-    { name: TRIGGER.HIHAT, band: [8000, 14000], threshold: 0.35, cooldown: 0.08 },
+    { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.6, cooldown: 0.15 },
+    { name: TRIGGER.SNARE, band: [1500, 4000],  threshold: 0.7, cooldown: 0.15 },
+    { name: TRIGGER.HIHAT, band: [8000, 14000], threshold: 0.4, cooldown: 0.08 },
   ],
 });
 
@@ -150,8 +152,40 @@ viz.setStyle({ lineColor: '#ffcc00' });   // updates the base style
 viz.setTimeline([...]);                   // live-updates the schedule
 viz.setTriggers([...]);                   // redefine trigger bands/thresholds
 viz.resize();                             // call on window resize
-viz.on('trigger:bass', ({ strength }) => { /* app-level reactions */ });
+viz.on('trigger:bass', ({ strength, intensity }) => { /* app-level reactions */ });
 ```
+
+## Dynamics
+
+A fixed threshold on band energy fails both ways: a quiet track never reaches
+it, and a loud, compressed one sits above it and fires on every wobble. So the
+analyzer tracks each band (and `rms`) against its own recent behaviour and
+reports two separate numbers:
+
+- **`relative`** (0–1) — where the band sits between its recent floor (the
+  level between hits) and its recent peak (how high hits have been reaching).
+  A hit reads near 1 in a quiet intro and a loud drop alike. Floor and peak
+  are the minimum and maximum over the last 1.5 s, so the peak holds steady
+  between beats but a sudden 20 dB drop is forgotten in under 2 s. It's
+  measured on linear amplitude, which is what lets a snare stand clear of the
+  hihats bleeding into its band.
+- **`intensity`** (0–1) — a slow, absolute measure of how loud the band is.
+  Every band is calibrated against pink noise at a loud-master level, so 1
+  means "as loud as a modern master" in any band and a passage 20 dB down
+  reads about 0.45 lower.
+
+Triggers fire when their band's `relative` crosses `threshold` and re-arm once
+it falls under half of it. The threshold is really a question of prominence
+against the loudest thing sharing the band, which is why the snare's is high
+(hats bleed into it) and the hihat's low (the snare's noise sets its peak).
+Silence is gated out near the analyser's noise floor, so hiss never stretches
+into hits.
+
+Each hit carries both numbers, which answer different questions: `strength`
+(relative) says *whether* and how sharply to react, `intensity` how *big*.
+`impact(hit)` (exported from the library) combines them — strength scaled by
+intensity, with a floor so quiet hits shrink rather than vanish — and is what
+the built-in visualizations use to size their responses.
 
 ## Audio sources
 
@@ -276,8 +310,10 @@ individually:
 Event slots take a trigger name. Level slots take a signal spec:
 
 ```js
-'mid'                                   // a band, by name
-'rms'                                   // overall loudness
+'mid'                                   // a band, by name (absolute)
+'rms'                                   // overall loudness (absolute)
+{ relative: 'bass' }                    // a band or 'rms' against its recent dynamics
+{ intensity: 'bass' }                   // a band or 'rms', slow absolute loudness
 0.5                                     // a constant
 { band: 'treble', gain: 1.4 }           // shaped
 { trigger: 'bass', decay: 4 }           // envelope on a trigger
@@ -289,7 +325,14 @@ Event slots take a trigger name. Level slots take a signal spec:
 Any spec object also accepts `smooth` (seconds), `curve` (exponent), `gain`
 (multiplier) and `clamp` (to 0–1), applied in that order. Because triggers
 become envelopes, a hit is usable anywhere a level is — including summed with
-one.
+one. A trigger envelope rises to the hit's `impact`, so it carries loudness
+as well as timing.
+
+Pulse-like slots default to `relative` and "how hard is it going" slots to
+`intensity`, so each visualization shows every hit while its overall scale
+tracks the song. `{ sum: [{ intensity: 'treble', gain: 0.75 }, { relative:
+'treble', gain: 0.25 }] }` is a useful middle ground: mostly loudness, with
+enough movement on top to glint on the beat.
 
 Binding a slot to a trigger that isn't configured logs a warning rather than
 failing silently. Two windows naming the same visualization with different
@@ -299,24 +342,25 @@ accumulated state restarts.
 
 ### Slots by visualization
 
-`slot` ← its default source.
+`slot` ← its default source. *rel* is `{ relative: … }`, *int* is `{ intensity: … }`, and *mix* is 0.75
+intensity plus 0.25 relative.
 
 | id | event slots | level slots |
 |----|-------------|-------------|
 | `eq-bars` | — | — |
 | `waveform` | — | `amplitude` ← rms |
-| `radial-burst` | `ring` ← bass, `scatter` ← hihat | `core` ← bass |
-| `polygon-pulse` | `kick` ← snare, `punch` ← bass | `sides` ← mid, `swell` ← bass |
-| `particles` | `shove` ← bass | `twinkle` ← treble |
-| `rolling-ball` | `swerve` ← snare | `speed` ← rms, `swell` ← bass |
-| `text` | — | `bounce` ← bass, `speed` ← rms |
-| `road` | — | `swell` ← rms |
-| `tunnel` | — | `spin` ← treble |
+| `radial-burst` | `ring` ← bass, `scatter` ← hihat | `core` ← rel bass |
+| `polygon-pulse` | `kick` ← snare, `punch` ← bass | `sides` ← int mid, `swell` ← rel bass, `energy` ← int rms |
+| `particles` | `shove` ← bass | `twinkle` ← mix treble |
+| `rolling-ball` | `swerve` ← snare | `speed` ← int rms, `swell` ← rel bass |
+| `text` | — | `bounce` ← rel bass, `speed` ← int rms |
+| `road` | — | `swell` ← 0.6 int rms + 0.4 rel rms |
+| `tunnel` | — | `spin` ← int treble |
 | `starfield` | `swell` ← bass | — |
-| `lightning` | `strike` ← bass, `offshoot` ← snare, `flicker` ← hihat | `wander` ← mid, `fork` ← highMid |
-| `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← mid, `glow` ← treble (smoothed) |
-| `thomas` | `jolt` ← bass | `drift` ← mid, `glow` ← treble (smoothed), `travel` ← mid, `spin` ← mid |
-| `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid, `size` ← bass (smoothed) |
+| `lightning` | `strike` ← bass, `offshoot` ← snare, `flicker` ← hihat | `wander` ← int mid, `fork` ← int highMid |
+| `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
+| `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
+| `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
 
 `eq-bars` has no slots because it draws the raw `spectrum`, and `waveform`
 routes only its amplitude — the trace data itself is an array, with nothing
@@ -358,15 +402,17 @@ static options = {
 signal works:
 
 ```js
-{ id: VIZ.TEXT, options: { text: 'hello', threshold: 0.5 }, bind: { bounce: 'treble' } }
+{ id: VIZ.TEXT, options: { text: 'hello', threshold: 0.5 }, bind: { bounce: { relative: 'treble' } } }
 ```
 
-After a turn, the level has to dip 0.12 below the peak it reached since before
-it can fire again, and turns are at least 0.3 s apart. Band levels on a full
-mix rarely fall far between hits (bass on the demo track sits at 0.78–0.95),
-so re-arming on a dip rather than a return below the threshold is what lets it
-keep turning. Mid and treble run lower — around 0.3 median on the demo track —
-so bind those with a threshold nearer 0.3–0.4.
+The default binding is `{ relative: 'bass' }`, which swings from near 0
+between hits to near 1 on them whatever the loudness, so 0.6 works for any
+`relative` binding. After a turn, the level has to dip 0.12 below the peak it
+reached since before it can fire again, and turns are at least 0.3 s apart.
+That dip is what keeps an absolute binding like `bounce: 'bass'` working too:
+absolute band levels on a full mix rarely fall far between hits (bass on the
+demo track sits at 0.78–0.95), and mid and treble run lower, around 0.3
+median, so absolute bindings need a threshold tuned to the band and song.
 
 ### Camera distance
 

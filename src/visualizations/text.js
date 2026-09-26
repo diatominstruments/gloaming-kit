@@ -10,12 +10,17 @@ import { CATEGORY } from './categories.js';
  * can drive it — `bind: { bounce: 'treble' }`, `{ band: 'mid', gain: 2 }` —
  * with the threshold set per instance.
  *
+ * The default binding is relative bass, which reads near 1 on a hit and near
+ * 0 between hits however loud the passage is, so one threshold suits a whole
+ * song. The bouncing speed comes from the passage's absolute loudness instead.
+ *
  * After a turn it re-arms once the level dips `DIP` below the peak it reached
- * since, not once it falls back under the threshold. Band energies are dB
- * scaled, so on a full mix a band can sit well above any useful threshold for
- * the whole song, easing up only a little between hits; waiting for it to
- * drop back under the line would mean one turn and then none. `MIN_GAP`
- * keeps a busy band from turning the text faster than the eye can follow.
+ * since, not once it falls back under the threshold. An absolute band binding
+ * (`bounce: 'bass'`) is dB scaled, so on a full mix it can sit above any
+ * useful threshold for the whole song, easing up only a little between hits;
+ * waiting for it to drop back under the line would mean one turn and then
+ * none. `MIN_GAP` keeps a busy band from turning the text faster than the eye
+ * can follow.
  *
  * Options:
  *   text       the string to draw (default 'GLOAMING')
@@ -27,8 +32,8 @@ export class BouncingText extends Visualization {
   static description = 'A string drifting around the screen, turning onto a new heading on each beat.';
   static category = CATEGORY.CLASSIC;
   static inputs = {
-    bounce: { kind: 'level', default: 'bass' },
-    speed:  { kind: 'level', default: 'rms' },
+    bounce: { kind: 'level', default: { relative: 'bass' } },
+    speed:  { kind: 'level', default: { intensity: 'rms' } },
   };
 
   static TEXT = 'GLOAMING';

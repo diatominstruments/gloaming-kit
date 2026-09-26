@@ -28,7 +28,11 @@ export class Road extends Visualization {
   static category = CATEGORY.MOTION;
 
   static inputs = {
-    swell: { kind: 'level', default: 'rms' },
+    // Mostly loudness, so a quiet passage lays down a low road, with enough
+    // of the beat on top that hits still stand out as taller rungs in it.
+    swell: { kind: 'level', default: {
+      sum: [{ intensity: 'rms', gain: 0.6 }, { relative: 'rms', gain: 0.4 }],
+    } },
   };
 
   static Z_NEAR = 1.5;

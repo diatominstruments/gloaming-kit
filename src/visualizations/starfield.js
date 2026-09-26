@@ -1,4 +1,4 @@
-import { Visualization } from './base.js';
+import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
@@ -36,8 +36,8 @@ export class Starfield extends Visualization {
     };
   }
 
-  onInput(slot, { strength }) {
-    if (slot === 'swell') this.sizeBoost = Math.max(this.sizeBoost, strength);
+  onInput(slot, data) {
+    if (slot === 'swell') this.sizeBoost = Math.max(this.sizeBoost, impact(data));
   }
 
   draw(ctx, dt) {

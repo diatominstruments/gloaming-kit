@@ -1,4 +1,4 @@
-import { Visualization } from './base.js';
+import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
@@ -18,10 +18,11 @@ import { TRIGGER } from '../analyzer.js';
  * long straight runs and breaks them with hard corners, which is what makes
  * lightning look like lightning.
  *
- * Not every hit gets a bolt. Strikes are gated on strength and held apart by
- * a refractory period, because a bolt per drum hit reads as a strobe with no
- * relationship to the music; sub-threshold hits flicker the existing bolts
- * instead. See STRIKE_THRESHOLD / REFRACTORY_SECONDS.
+ * Not every hit gets a bolt. Strikes are gated on how prominent the hit is
+ * (its relative strength, so the gate works the same in quiet and loud
+ * passages) and held apart by a refractory period, because a bolt per drum
+ * hit reads as a strobe with no relationship to the music; sub-threshold hits
+ * flicker the existing bolts instead. See STRIKE_THRESHOLD / REFRACTORY_SECONDS.
  *
  * Performance note — the shape this replaced walked a recursive tree every
  * frame and issued a stroke per limb (~500 blurred strokes/frame). Here the
@@ -65,8 +66,8 @@ export class Lightning extends Visualization {
     strike:   { kind: 'event', default: TRIGGER.BASS },
     offshoot: { kind: 'event', default: TRIGGER.SNARE },
     flicker:  { kind: 'event', default: TRIGGER.HIHAT },
-    wander:   { kind: 'level', default: 'mid' },
-    fork:     { kind: 'level', default: 'highMid' },
+    wander:   { kind: 'level', default: { intensity: 'mid' } },
+    fork:     { kind: 'level', default: { intensity: 'highMid' } },
   };
 
   static MAX_BOLTS = 6;
@@ -78,8 +79,10 @@ export class Lightning extends Visualization {
   static PASSES = 5;              // main channel detail; 2^PASSES segments
 
   // --- firing rate (tune these by ear) ---
-  static STRIKE_THRESHOLD = 0.35;   // trigger strength needed for a real bolt;
-                                    // weaker hits only flicker what's lit
+  static STRIKE_THRESHOLD = 0.8;    // trigger strength needed for a real bolt;
+                                    // less prominent hits only flicker what's
+                                    // lit. Strength is relative and triggers
+                                    // fire at 0.6+, so this picks the clear ones
   static REFRACTORY_SECONDS = 0.4;  // hard floor on the gap between bolts, so a
                                     // busy drum pattern can't become a strobe
   static IDLE_STRIKE_SECONDS = 5;   // last-resort strike so a long quiet
@@ -93,10 +96,14 @@ export class Lightning extends Visualization {
     this.sinceStrike = 0;
   }
 
-  onInput(slot, { strength }) {
+  onInput(slot, data) {
+    // Whether to strike is a question of prominence; how big is a question of
+    // prominence scaled by loudness.
+    const { strength } = data;
+    const size = impact(data);
     if (slot === 'flicker') {
       // Too frequent to spawn geometry for — brighten what's already lit.
-      this.flicker = Math.max(this.flicker, 0.5 + strength * 0.5);
+      this.flicker = Math.max(this.flicker, 0.5 + size * 0.5);
       return;
     }
     if (slot !== 'strike' && slot !== 'offshoot') return;
@@ -106,15 +113,15 @@ export class Lightning extends Visualization {
       // Rejected hits aren't discarded: they glow the sky instead of adding
       // another bolt, so the small hits still register without the screen
       // filling up and hiding which hits actually mattered.
-      this.flicker = Math.max(this.flicker, 0.3 + strength * 0.4);
+      this.flicker = Math.max(this.flicker, 0.3 + size * 0.4);
       return;
     }
 
     if (slot === 'strike') {
-      this.strike(strength, 1);
-      this.flash = Math.max(this.flash, 0.5 + strength * 0.5);
+      this.strike(size, 1);
+      this.flash = Math.max(this.flash, 0.5 + size * 0.5);
     } else {
-      this.strike(strength, 0.55);
+      this.strike(size, 0.55);
     }
   }
 
