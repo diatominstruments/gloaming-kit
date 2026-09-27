@@ -295,7 +295,7 @@ order they came on in. Pair one with a figure from above.
 
 | id | what it does |
 |----|--------------|
-| `perlin-glow` | domain-warped noise shaded from the background colour up through a dimmed line colour to accent on its brightest ridges; brightens with the passage and flares, swells and surges on hits. Options `scale`, `seed` |
+| `perlin-glow` | domain-warped noise shaded from the background colour up through a dimmed line colour to accent on its brightest ridges; brightens with the passage. Option `react` picks what a hit does, none of which move the field: `'grow'` (default) spreads the bright zones outward in place, `'layers'` fades up a second, finer field in the accent colour, `'curl'` deepens the warp so shapes twist. Options `scale`, `seed` |
 | `infinity-mirror` | a rim whose inside reflects the previous frame shrunk and turned, so the rim and everything on screen recede into a twisting tunnel. The reflection opens up with `reveal`, the twist per reflection follows `turn`, and `flip` hits reverse it. Option `shape: 'rect' \| 'circle'` |
 | `kaleidoscope` | a turning wedge of the previous frame mirrored around the centre into a rosette behind the foreground; hits step the wedge count. Option `segments` |
 | `text-ghosts` | hits stamp the text somewhere on screen; each fades into a ghost, and ghosts drift on a noise flow field, showing in slow patches. Options `text`, `count`, `seed` (share a seed with `perlin-glow` to drift in the same currents) |

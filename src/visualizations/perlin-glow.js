@@ -22,17 +22,28 @@ import { parseColor } from '../style.js';
  *   glow   how lit the field is — slow passage loudness by default, so a
  *          quiet verse sits dim and a chorus fills the screen
  *   flow   how fast the field morphs
- *   flare  a hit brightens the whole field, swells its shapes outward and
- *          surges the morph forward, all decaying together
+ *   flare  a hit, answered according to the `react` option below. However
+ *          it is answered, it rises over FLARE_ATTACK rather than landing in
+ *          one frame, and nothing moves or zooms: hits change the field's
+ *          structure or light, never its position, which reads as a jolt.
+ *
+ * `react` picks what a flare does:
+ *   'grow'    the bright zones spread outward in place and neighbours merge,
+ *             then shrink back — every contour of the field moves outward
+ *   'layers'  a second, finer field in accentColor fades up over the main
+ *             one, so hits read as a different light joining the first
+ *   'curl'    the warp deepens, so the shapes twist and curl in place, with
+ *             a slight brightening
  *
  * Options:
+ *   react  'grow', 'layers' or 'curl' (default 'grow')
  *   scale  feature size; 2 is twice as broad, 0.5 twice as fine (default 1)
  *   seed   which noise field (default 1)
  */
 export class PerlinGlow extends Visualization {
   static id = 'perlin-glow';
   static label = 'Perlin Glow';
-  static description = 'A background of drifting, domain-warped light that brightens with the mix and flares on hits.';
+  static description = 'A background of drifting, domain-warped light that brightens with the mix; hits grow it, layer in a second light, or curl it.';
   static category = CATEGORY.BACKGROUNDS;
   static layer = LAYER.BACKGROUND;
   static inputs = {
@@ -40,7 +51,9 @@ export class PerlinGlow extends Visualization {
     flow:  { kind: 'level', default: 'mid' },
     flare: { kind: 'event', default: TRIGGER.BASS },
   };
+  static REACTIONS = ['grow', 'layers', 'curl'];
   static options = {
+    react: { kind: 'enum', values: PerlinGlow.REACTIONS, default: 'grow' },
     scale: { kind: 'number', default: 1, min: 0.25, max: 4, step: 0.05 },
     seed:  { kind: 'number', default: 1, min: 0, max: 9999, step: 1 },
   };
@@ -56,14 +69,20 @@ export class PerlinGlow extends Visualization {
   static BASE = 0.35;        // brightness at silence
   static GLOW_GAIN = 0.55;   // extra at full `glow`
   static GLOW_TAU = 0.35;
-  static FLARE_GAIN = 0.35;  // extra brightness at a full-impact flare
+  static FLARE_ATTACK = 0.06; // seconds; how long a flare takes to rise
   static FLARE_DECAY = 2.5;  // per second
-  static BREATH = 0.12;      // shapes swell by this fraction on a full flare
+  static GROW = 0.2;         // 'grow': field value lift at a full flare
+  static CURL = 1.4;         // 'curl': extra warp at a full flare
+  static CURL_GAIN = 0.12;   // 'curl': extra brightness at a full flare
+  static LAYER_SCALE = 2.3;  // 'layers': second field's frequency, vs the first
+  static LAYER_FLOOR = 0.08; // 'layers': second field's opacity between hits
+  static LAYER_PEAK = 0.55;  // 'layers': how far toward accent it can light
+  static LAYER_OCTAVES = { octaves: 2 };
 
   static BASE_FLOW = 0.05;   // noise units per second along time, at silence
   static FLOW_GAIN = 0.25;   // extra at full `flow`
   static FLOW_TAU = 0.6;
-  static SURGE = 0.6;        // extra flow at a full flare
+  static SURGE = 0.25;       // extra flow at a full flare
 
   static LINE_KNEE = 0.7;    // ramp position where lineColor peaks
   static LINE_PEAK = 0.35;   // how much of lineColor the field ever shows
@@ -71,12 +90,15 @@ export class PerlinGlow extends Visualization {
 
   constructor(opts) {
     super(opts);
+    this.react = PerlinGlow.REACTIONS.includes(this.options.react) ? this.options.react : 'grow';
     this.scale = Number(this.options.scale ?? 1) || 1;
     this.noise = createNoise3D(Number(this.options.seed ?? 1) | 0);
     this.t = 0;
     this.glow = 0;
     this.flow = 0;
-    this.flare = 0;
+    this.kick = 0;            // instant on a hit, decaying
+    this.flare = 0;           // follows kick with a short rise
+    this.accentDelta = [0, 0, 0];
     this.lut = new Uint8ClampedArray(256 * 3);
     this.lutKey = '';
     this.buffer = document.createElement('canvas');
@@ -102,7 +124,7 @@ export class PerlinGlow extends Visualization {
   }
 
   onInput(slot, data) {
-    if (slot === 'flare') this.flare = Math.max(this.flare, impact(data));
+    if (slot === 'flare') this.kick = Math.max(this.kick, impact(data));
   }
 
   /** Rebuild the 256-step colour ramp when the (easing) style has moved. */
@@ -117,6 +139,8 @@ export class PerlinGlow extends Visualization {
     const line = parseColor(s.lineColor) ?? [127, 255, 212];
     const accent = parseColor(s.accentColor) ?? line;
     const peak = bg.map((c, i) => c + (line[i] - c) * G.LINE_PEAK);
+    // 'layers' adds the second field as light on top: this much per unit.
+    this.accentDelta = bg.map((c, i) => (accent[i] - c) * G.LAYER_PEAK);
     for (let i = 0; i < 256; i++) {
       const t = i / 255;
       for (let c = 0; c < 3; c++) {
@@ -138,18 +162,28 @@ export class PerlinGlow extends Visualization {
     const G = PerlinGlow;
     this.glow = approach(this.glow, this.in('glow'), G.GLOW_TAU, dt);
     this.flow = approach(this.flow, this.in('flow'), G.FLOW_TAU, dt);
-    this.flare *= Math.exp(-G.FLARE_DECAY * dt);
+    // Two stages, so a hit swells in over FLARE_ATTACK and then decays,
+    // rather than arriving at full strength in a single frame.
+    this.kick *= Math.exp(-G.FLARE_DECAY * dt);
+    this.flare = approach(this.flare, this.kick, G.FLARE_ATTACK, dt);
     this.t += dt * (G.BASE_FLOW + G.FLOW_GAIN * this.flow + G.SURGE * this.flare);
     this.updateRamp();
 
-    const bright = G.BASE + G.GLOW_GAIN * clamp01(this.glow) + G.FLARE_GAIN * this.flare;
-    // Noise units per sample; a flare shrinks it so shapes swell outward.
+    const { react, flare } = this;
+    const grow = react === 'grow' ? G.GROW * flare : 0;
+    const warp = G.WARP + (react === 'curl' ? G.CURL * flare : 0);
+    const layered = react === 'layers';
+    const layerAlpha = G.LAYER_FLOOR + (1 - G.LAYER_FLOOR) * flare;
+    const bright = G.BASE + G.GLOW_GAIN * clamp01(this.glow)
+      + (react === 'curl' ? G.CURL_GAIN * flare : 0);
+
     const unit = Math.min(this.width, this.height) * G.FEATURE * this.scale;
-    const step = (this.cell / unit) * (1 - G.BREATH * this.flare);
+    const step = this.cell / unit; // noise units per sample
     const x0 = -(this.cols / 2) * step;
     const y0 = -(this.rows / 2) * step;
 
     const { noise, lut, t } = this;
+    const [ar, ag, ab] = this.accentDelta;
     const warpT = t * 0.6;
     const data = this.image.data;
     let o = 0;
@@ -161,12 +195,32 @@ export class PerlinGlow extends Visualization {
         // turns plain noise blobs into curling smoke-like shapes.
         const qx = noise(nx + 1.7, ny + 9.2, warpT);
         const qy = noise(nx + 8.3, ny + 2.8, warpT);
-        const n = fbm(noise, nx + G.WARP * qx, ny + G.WARP * qy, t, G.OCTAVES);
-        const v = clamp01(0.5 + n * G.SPREAD);
+        const n = fbm(noise, nx + warp * qx, ny + warp * qy, t, G.OCTAVES);
+        // Lifting the value moves every contour outward: zones grow in place.
+        const v = clamp01(0.5 + n * G.SPREAD + grow);
         const idx = (clamp01(v * v * bright * G.EXPOSURE) * 255) | 0;
-        data[o] = lut[idx * 3];
-        data[o + 1] = lut[idx * 3 + 1];
-        data[o + 2] = lut[idx * 3 + 2];
+        let r = lut[idx * 3];
+        let g = lut[idx * 3 + 1];
+        let b = lut[idx * 3 + 2];
+        if (layered) {
+          // A finer field, offset in space and time, bent by the same warp
+          // so the two lights share currents without sharing shapes.
+          const m = fbm(
+            noise,
+            (nx + 0.5 * qx) * G.LAYER_SCALE + 40.1,
+            (ny + 0.5 * qy) * G.LAYER_SCALE - 23.7,
+            t * 1.3 + 7.7,
+            G.LAYER_OCTAVES,
+          );
+          const w = clamp01(0.5 + m * G.SPREAD);
+          const k = w * w * w * layerAlpha;
+          r += ar * k;
+          g += ag * k;
+          b += ab * k;
+        }
+        data[o] = r;
+        data[o + 1] = g;
+        data[o + 2] = b;
         o += 4;
       }
     }
