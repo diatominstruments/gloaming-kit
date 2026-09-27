@@ -17,9 +17,18 @@ import { Rossler } from './rossler.js';
 import { Halvorsen } from './halvorsen.js';
 import { Harmonograph } from './harmonograph.js';
 import { BouncingText } from './text.js';
+import { PerlinGlow } from './perlin-glow.js';
+import { InfinityMirror } from './infinity-mirror.js';
+import { Kaleidoscope } from './kaleidoscope.js';
+import { TextGhosts } from './text-ghosts.js';
+import { DotGrid } from './dot-grid.js';
+import { Moire } from './moire.js';
+import { LightLeaks } from './light-leaks.js';
+import { Scanlines } from './scanlines.js';
 import { CATEGORY, CATEGORIES } from './categories.js';
+import { LAYER, LAYERS } from './layers.js';
 
-export { CATEGORY, CATEGORIES };
+export { CATEGORY, CATEGORIES, LAYER, LAYERS };
 
 /** Built-in visualization registry, keyed by the id used in timeline config. */
 export const registry = new Map(
@@ -28,6 +37,8 @@ export const registry = new Map(
     Road, Tunnel, RollingBall, Starfield,
     Lightning, Harmonograph, BouncingText,
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
+    PerlinGlow, InfinityMirror, Kaleidoscope, TextGhosts, DotGrid, Moire, LightLeaks,
+    Scanlines,
   ].map((V) => [V.id, V]),
 );
 
@@ -61,6 +72,14 @@ export const VIZ = Object.freeze({
   AIZAWA: Aizawa.id,
   ROSSLER: Rossler.id,
   HALVORSEN: Halvorsen.id,
+  PERLIN_GLOW: PerlinGlow.id,
+  INFINITY_MIRROR: InfinityMirror.id,
+  KALEIDOSCOPE: Kaleidoscope.id,
+  TEXT_GHOSTS: TextGhosts.id,
+  DOT_GRID: DotGrid.id,
+  MOIRE: Moire.id,
+  LIGHT_LEAKS: LightLeaks.id,
+  SCANLINES: Scanlines.id,
 });
 
 /** Register a custom visualization class (must have a static `id`). */
@@ -84,7 +103,7 @@ const describeOption = (name, spec) => (Array.isArray(spec)
  * data: safe to serialize, and a copy, so editing it can't reach the class.
  *
  *   {
- *     id: 'thomas', label: 'Thomas', description: '…', category: 'attractors',
+ *     id: 'thomas', label: 'Thomas', description: '…', category: 'attractors', layer: 'main',
  *     inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
  *     options: [{ name: 'distance', kind: 'enum', values: [...], default: 'near' }],
  *   }
@@ -99,6 +118,7 @@ export function describe(vizOrId) {
     label: V.label ?? titleCase(V.id),
     description: V.description ?? '',
     category: V.category ?? CATEGORY.OTHER,
+    layer: LAYERS.includes(V.layer) ? V.layer : LAYER.MAIN,
     inputs: Object.entries(V.inputs ?? {}).map(([name, def]) => ({
       name, kind: def.kind, default: copy(def.default),
     })),

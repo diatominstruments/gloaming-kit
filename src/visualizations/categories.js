@@ -13,6 +13,8 @@ export const CATEGORY = Object.freeze({
   MOTION: 'motion',
   CHAOS: 'chaos',
   ATTRACTORS: 'attractors',
+  BACKGROUNDS: 'backgrounds',
+  OVERLAYS: 'overlays',
   OTHER: 'other',
 });
 
@@ -37,6 +39,16 @@ export const CATEGORIES = Object.freeze([
     id: CATEGORY.ATTRACTORS,
     label: 'Attractors',
     description: 'Strange attractors whose parameters drift with the music and jolt on hits.',
+  },
+  {
+    id: CATEGORY.BACKGROUNDS,
+    label: 'Backgrounds',
+    description: 'Full-screen fields that sit behind everything else and breathe with the mix.',
+  },
+  {
+    id: CATEGORY.OVERLAYS,
+    label: 'Overlays',
+    description: 'Screen treatments laid over everything else.',
   },
   {
     id: CATEGORY.OTHER,

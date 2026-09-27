@@ -76,3 +76,13 @@ export function easeStyle(current, target, tau, dt) {
     current[key] = to;
   }
 }
+
+/**
+ * A style colour at the given opacity, as `rgba(…)`. Anything parseColor
+ * can't read comes back unchanged, so a keyword or gradient still draws —
+ * just at whatever opacity it carries itself.
+ */
+export function rgba(value, alpha) {
+  const c = parseColor(value);
+  return c ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})` : value;
+}

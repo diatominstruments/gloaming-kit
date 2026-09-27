@@ -289,6 +289,26 @@ attractors (`attractor` through `halvorsen`) are reported as their own
 | `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling, and scaled past the frame so the horns run off every edge. Same reactions as `thomas` |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
 
+**Backgrounds** — full-screen fields that draw in the background layer (see
+[Layers](#layers)), so they sit behind anything else in the window whatever
+order they came on in. Pair one with a figure from above.
+
+| id | what it does |
+|----|--------------|
+| `perlin-glow` | domain-warped noise shaded from the background colour up through a dimmed line colour to accent on its brightest ridges; brightens with the passage and flares, swells and surges on hits. Options `scale`, `seed` |
+| `infinity-mirror` | a rim whose inside reflects the previous frame shrunk and turned, so the rim and everything on screen recede into a twisting tunnel. The reflection opens up with `reveal`, the twist per reflection follows `turn`, and `flip` hits reverse it. Option `shape: 'rect' \| 'circle'` |
+| `kaleidoscope` | a turning wedge of the previous frame mirrored around the centre into a rosette behind the foreground; hits step the wedge count. Option `segments` |
+| `text-ghosts` | hits stamp the text somewhere on screen; each fades into a ghost, and ghosts drift on a noise flow field, showing in slow patches. Options `text`, `count`, `seed` (share a seed with `perlin-glow` to drift in the same currents) |
+| `dot-grid` | halftone grid of dots sized by a drifting noise field (`mode: 'noise'`) or a radial spectrum (`mode: 'spectrum'`); hits ripple an accent ring outward. Option `spacing` |
+| `moire` | two fine ring (`pattern: 'rings'`) or line (`pattern: 'lines'`) patterns slightly out of register, so small audio-driven shifts sweep large interference bands |
+| `light-leaks` | drifting bokeh discs and glows bleeding in from off-screen edges, added with `lighter`; hits bloom a few discs and flare the leaks |
+
+**Overlays** — screen treatments in the overlay layer, drawn over everything.
+
+| id | what it does |
+|----|--------------|
+| `scanlines` | CRT scanlines crawling down, a vignette, and red/cyan channel split that opens on hits; snare hits send a roll bar down the screen and tear the channels wider. Option `strength` |
+
 ## Routing
 
 A visualization declares named **input slots** instead of reading the analyzer
@@ -361,6 +381,14 @@ intensity plus 0.25 relative.
 | `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
+| `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
+| `infinity-mirror` | `flip` ← snare | `reveal` ← rel bass (fast rise, slow fall), `turn` ← mid |
+| `kaleidoscope` | `shift` ← snare | `reveal` ← int rms, `spin` ← mid |
+| `text-ghosts` | `stamp` ← bass | `haze` ← int rms, `drift` ← mid |
+| `dot-grid` | `ripple` ← bass | `swell` ← int rms, `flow` ← mid |
+| `moire` | `kick` ← bass | `shift` ← int bass, `turn` ← mid |
+| `light-leaks` | `bloom` ← bass | `warmth` ← int rms, `drift` ← mid |
+| `scanlines` | `roll` ← snare | `split` ← rel bass |
 
 `eq-bars` has no slots because it draws the raw `spectrum`, and `waveform`
 routes only its amplitude — the trace data itself is an array, with nothing
@@ -432,6 +460,20 @@ the projection can magnify anything — on Thomas at `near`, over a full
 revolution, the longest segment drawn goes from 3.1× the canvas diagonal at
 `NEAR = 0.06` to 0.4× at 0.35. At `med` and `far` nothing is ever clipped.
 
+## Layers
+
+The engine draws active visualizations back to front by layer — `background`,
+`main`, `overlay` — and, within a layer, in the order they came on screen. A
+visualization names its layer with `static layer = LAYER.BACKGROUND`; without
+one it draws in `main`. So a background window that starts partway through a
+figure's window still lands behind it, and `scanlines` covers both.
+
+Layer is separate from category: category groups a picker, layer decides what
+covers what. `describe()` reports both.
+
+A background's darkest colour should be the style's `background`, so it
+replaces the engine's flat fill without a seam as it fades in.
+
 ## Metadata
 
 Every visualization carries descriptive metadata alongside its routing and
@@ -442,6 +484,7 @@ anything about the library's contents:
 static label       = 'Radial Burst';
 static description = 'Hits launch expanding rings and scatter ticks around a breathing core.';
 static category    = CATEGORY.CLASSIC;
+static layer       = LAYER.MAIN;          // draw order; see Layers
 ```
 
 All three are optional. Without a `label` one is derived from the id
@@ -452,7 +495,7 @@ Two functions read it back as plain, JSON-safe copies:
 ```js
 describe('thomas');
 // {
-//   id: 'thomas', label: 'Thomas', category: 'attractors',
+//   id: 'thomas', label: 'Thomas', category: 'attractors', layer: 'main',
 //   description: 'Thomas attractor as a rotating 3D ribbon, …',
 //   inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
 //   options: [{ name: 'distance', kind: 'enum', values: ['near', 'med', 'far'], default: 'near' }],
@@ -525,6 +568,18 @@ routed. The engine handles clearing the canvas, fade in/out, and
 
 `static triggers = [...]` with `onTrigger(name, data)` still works for
 visualizations that don't declare slots, but it can't be rerouted.
+
+`afterFrame(ctx)` is called once every layer has drawn, with the finished
+frame on the canvas — for effects that feed a frame into the next one.
+`FeedbackVisualization` ([src/visualizations/feedback-base.js](src/visualizations/feedback-base.js))
+captures it for you as `this.previous`; `infinity-mirror` and `kaleidoscope`
+build on it. An overlay can read the current frame straight off
+`ctx.canvas` in `draw`, since everything beneath it has already drawn.
+
+For smooth organic fields, [src/noise.js](src/noise.js) has seeded 3D Perlin
+noise (`createNoise3D(seed)`, about ±1) and `fbm()` for layered octaves;
+the third coordinate is usually time. `rgba(color, alpha)` in
+[src/style.js](src/style.js) turns a style colour into a translucent one.
 
 Two conventions worth following, both learned the hard way:
 

@@ -55,6 +55,8 @@ export { approach, clamp01, impact } from '../util.js';
  *   onFrame(frame)          per-tick analysis data (bands, spectrum, level…)
  *   onInput(slot, data)     an event slot fired
  *   draw(ctx, dt)           render; ctx is pre-styled, dt is seconds elapsed
+ *   afterFrame(ctx)         optional; the whole frame, every layer, has been
+ *                           drawn — for effects that feed it into the next
  *
  * The engine owns the lifecycle: instances are created when their timeline
  * window starts and disposed when it ends, with an alpha fade in between.
@@ -107,6 +109,8 @@ export class Visualization {
   onTrigger(name, data) {}
 
   draw(ctx, dt) {}
+
+  afterFrame(ctx) {}
 
   resize(width, height) {
     this.width = width;

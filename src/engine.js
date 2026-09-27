@@ -3,6 +3,7 @@ import { SongPlayer } from './player.js';
 import { Analyzer, DEFAULT_TRIGGERS } from './analyzer.js';
 import { Timeline } from './timeline.js';
 import { registry } from './visualizations/index.js';
+import { layerRank } from './visualizations/layers.js';
 import { resolveEvent, referencedTriggers } from './signals.js';
 import { easeStyle } from './style.js';
 
@@ -186,7 +187,10 @@ export class GloamingKit extends Emitter {
     ctx.shadowBlur = 0;
     ctx.fillRect(0, 0, w, h);
 
-    for (const [key, entry] of this.active) {
+    // Back to front by layer. The sort is stable, so within a layer the
+    // Map's insertion order (spawn order) still decides.
+    const ordered = [...this.active].sort(([, a], [, b]) => a.rank - b.rank);
+    for (const [key, entry] of ordered) {
       entry.alpha += (entry.leaving ? -1 : 1) * (dt / FADE_SECONDS);
       if (entry.leaving && entry.alpha <= 0) {
         entry.offs.forEach((off) => off());
@@ -202,6 +206,10 @@ export class GloamingKit extends Emitter {
       entry.viz.draw(ctx, dt);
       ctx.restore();
     }
+
+    // The finished frame, for visualizations that feed it back into the
+    // next one. Skipped entries were deleted above, so this is what drew.
+    for (const entry of this.active.values()) entry.viz.afterFrame(ctx);
   }
 
   /** Reconcile on-screen visualizations with what the timeline wants. */
@@ -232,7 +240,7 @@ export class GloamingKit extends Emitter {
       bind,
       options,
     });
-    const entry = { viz, alpha: 0, leaving: false, offs: [] };
+    const entry = { viz, alpha: 0, leaving: false, offs: [], rank: layerRank(VizClass.layer) };
 
     // Subscribe each declared event slot to whatever trigger it's bound to.
     // Level slots need no subscription — they're polled during the frame —
@@ -275,8 +283,9 @@ export class GloamingKit extends Emitter {
 }
 
 export { Visualization } from './visualizations/base.js';
+export { FeedbackVisualization } from './visualizations/feedback-base.js';
 export {
-  register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES,
+  register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES, LAYER, LAYERS,
 } from './visualizations/index.js';
 export { BANDS, TRIGGER, DEFAULT_TRIGGERS } from './analyzer.js';
 export { impact } from './util.js';

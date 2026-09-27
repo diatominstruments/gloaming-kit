@@ -34,6 +34,9 @@
         visualizations: [VIZ.ATTRACTOR],
         style: { lineColor: '#ff9d5c', accentColor: '#ffe08a', background: '#120a06' },
       },
+      // A background joining mid-section: it comes on after the attractor,
+      // but its layer still draws it underneath.
+      { from: 46, to: 64, visualizations: [VIZ.PERLIN_GLOW] },
       // Same visualization, rewired: its ring bursts follow the hihat and its
       // core breathes with treble instead of bass.
       { from: 54, to: 64, visualizations: [
