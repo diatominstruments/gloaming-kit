@@ -11,6 +11,9 @@
 
   const viz = new GloamingKit({
     canvas,
+    // Loaded by index.html; undefined if that failed, which leaves 3D
+    // visualizations drawing their 2D fallbacks.
+    three: window.THREE,
     style: {
       background: '#0a0a12',
       lineColor: '#7fffd4',
@@ -109,6 +112,14 @@
   bindControl('st-accent', 'accentColor');
   bindControl('st-width', 'lineWidth', parseFloat);
   bindControl('st-glow', 'shadowBlur', parseFloat);
+
+  const toggle3D = document.getElementById('st-3d');
+  toggle3D.addEventListener('change', () => viz.set3D(toggle3D.checked));
+  if (!window.THREE) {
+    toggle3D.checked = false;
+    toggle3D.disabled = true;
+    toggle3D.title = 'three.js did not load';
+  }
 
   // ---- timeline editor -----------------------------------------------------
 

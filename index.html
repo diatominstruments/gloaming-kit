@@ -99,11 +99,21 @@
     <div class="row"><label for="st-accent">Accent color</label><input id="st-accent" type="color" value="#ff5d8f"></div>
     <div class="row"><label for="st-width">Line width</label><input id="st-width" type="range" min="1" max="8" step="0.5" value="2"></div>
     <div class="row"><label for="st-glow">Glow</label><input id="st-glow" type="range" min="0" max="40" step="1" value="14"></div>
+    <div class="row"><label for="st-3d">3D rendering</label><input id="st-3d" type="checkbox" checked></div>
 
     <h2>Timeline</h2>
     <div id="timeline"></div>
     <button id="add-window">+ Add window</button>
   </aside>
+
+  <!-- three.js is optional: the library only uses it if the app passes it in,
+       and 3D visualizations fall back to 2D without it. A module script is
+       deferred, so it runs before demo.js; if it fails to load (offline), the
+       demo simply runs in 2D. -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js';
+    window.THREE = THREE;
+  </script>
 
   <!-- Library first, then the demo app that consumes it. Both are classic
        scripts, so this page also works opened straight from disk. -->

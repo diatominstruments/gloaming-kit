@@ -10,6 +10,14 @@
     "watch": "npm run build -- --watch",
     "build:demo": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=docs/gloaming-kit.js --minify"
   },
+  "peerDependencies": {
+    "three": ">=0.163.0"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "esbuild": "^0.25.0"
   }

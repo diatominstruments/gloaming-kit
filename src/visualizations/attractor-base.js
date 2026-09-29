@@ -267,6 +267,10 @@ export class FlowAttractor extends AttractorBase {
     this.spin = this.constructor.SPIN[0];
     this.surge = 0;
     this.kick = 0;
+    // View for the current frame; see advance().
+    this.pitch = 0.35;
+    this.twist = 0;
+    this.swell = 1;
 
     // Camera distance resolves once: an unknown name falls back to `med`
     // rather than producing a NaN focal length that blanks the figure.
@@ -325,10 +329,16 @@ export class FlowAttractor extends AttractorBase {
     if (this.count < this.constructor.TRAIL) this.count++;
   }
 
-  draw(ctx, dt) {
+  /**
+   * Advance the simulation and the view by `dt`: integrate the trail, then
+   * set `this.yaw`, `this.pitch`, `this.twist` and `this.swell` for this
+   * frame. Everything a renderer needs, and nothing that depends on how it
+   * draws — so the 2D ribbon below and the 3D one (flow-ribbon.js) move
+   * identically.
+   */
+  advance(dt) {
     const {
-      TRAIL, SUBSTEPS, H, H_LIMIT, SPEED, SEED, CENTER, SCALE, CHUNKS, SPIN, LIMIT,
-      TWIST, KICK_SPIN, PULSE, KICK_DECAY, NEAR,
+      SUBSTEPS, H, H_LIMIT, SPEED, SEED, SPIN, LIMIT, TWIST, KICK_SPIN, PULSE, KICK_DECAY,
     } = this.constructor;
     this.updateParams(dt);
 
@@ -357,13 +367,19 @@ export class FlowAttractor extends AttractorBase {
     // accelerates round and eases off rather than jumping to a new angle.
     this.spin = approach(this.spin, SPIN[0] + this.in('spin') * SPIN[1], 0.3, dt);
     this.yaw += (this.spin + this.kick * KICK_SPIN) * dt;
-    const pitch = 0.35 + Math.sin(this.t * 0.4) * 0.18;
+    this.pitch = 0.35 + Math.sin(this.t * 0.4) * 0.18;
 
     // Idle corkscrew rides `this.t`, which advances with mid intensity, so the
     // shape keeps writhing between hits and writhes faster when the track is
     // busy. Hits swell the figure uniformly — never shear it.
-    const twist = TWIST * Math.sin(this.t * 0.55);
-    const swell = 1 + PULSE * this.kick;
+    this.twist = TWIST * Math.sin(this.t * 0.55);
+    this.swell = 1 + PULSE * this.kick;
+  }
+
+  draw(ctx, dt) {
+    const { TRAIL, CENTER, SCALE, CHUNKS, NEAR } = this.constructor;
+    this.advance(dt);
+    const { pitch, twist, swell } = this;
 
     const cx = this.width / 2;
     const cy = this.height / 2;

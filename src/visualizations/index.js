@@ -15,6 +15,12 @@ import { Thomas } from './thomas.js';
 import { Aizawa } from './aizawa.js';
 import { Rossler } from './rossler.js';
 import { Halvorsen } from './halvorsen.js';
+import { Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D } from './attractors-3d.js';
+import { FractalCathedral } from './fractal-cathedral.js';
+import { SpectrumTerrain } from './spectrum-terrain.js';
+import { Nebula } from './nebula.js';
+import { HelixCorridor } from './helix-corridor.js';
+import { Tesseract } from './tesseract.js';
 import { Harmonograph } from './harmonograph.js';
 import { BouncingText } from './text.js';
 import { PerlinGlow } from './perlin-glow.js';
@@ -37,6 +43,8 @@ export const registry = new Map(
     Road, Tunnel, RollingBall, Starfield,
     Lightning, Harmonograph, BouncingText,
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
+    Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D,
+    FractalCathedral, SpectrumTerrain, Nebula, HelixCorridor, Tesseract,
     PerlinGlow, InfinityMirror, Kaleidoscope, TextGhosts, DotGrid, Moire, LightLeaks,
     Scanlines,
   ].map((V) => [V.id, V]),
@@ -72,6 +80,15 @@ export const VIZ = Object.freeze({
   AIZAWA: Aizawa.id,
   ROSSLER: Rossler.id,
   HALVORSEN: Halvorsen.id,
+  THOMAS_3D: Thomas3D.id,
+  AIZAWA_3D: Aizawa3D.id,
+  ROSSLER_3D: Rossler3D.id,
+  HALVORSEN_3D: Halvorsen3D.id,
+  FRACTAL_CATHEDRAL: FractalCathedral.id,
+  SPECTRUM_TERRAIN: SpectrumTerrain.id,
+  NEBULA: Nebula.id,
+  HELIX_CORRIDOR: HelixCorridor.id,
+  TESSERACT: Tesseract.id,
   PERLIN_GLOW: PerlinGlow.id,
   INFINITY_MIRROR: InfinityMirror.id,
   KALEIDOSCOPE: Kaleidoscope.id,
@@ -99,14 +116,29 @@ const describeOption = (name, spec) => (Array.isArray(spec)
   : { name, ...copy(spec) });
 
 /**
+ * The class a 3D visualization is drawn as when 3D is off: its `fallback`,
+ * given as a class or a registry id. Null for 2D classes and for 3D ones that
+ * declare none.
+ */
+export function fallbackOf(V) {
+  if (V.renderer !== '3d' || !V.fallback) return null;
+  return typeof V.fallback === 'string' ? registry.get(V.fallback) ?? null : V.fallback;
+}
+
+/**
  * Everything a client needs to present one visualization, as plain JSON-safe
  * data: safe to serialize, and a copy, so editing it can't reach the class.
  *
  *   {
  *     id: 'thomas', label: 'Thomas', description: '…', category: 'attractors', layer: 'main',
+ *     renderer: '2d', fallback: null,
  *     inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
  *     options: [{ name: 'distance', kind: 'enum', values: [...], default: 'near' }],
  *   }
+ *
+ * `renderer` is '2d' or '3d'. A 3D visualization names the id drawn in its
+ * place when 3D is off as `fallback` (null if it has none), so a picker can
+ * say what the viewer will actually see.
  *
  * Accepts an id or a class; returns null for an unknown id.
  */
@@ -119,6 +151,8 @@ export function describe(vizOrId) {
     description: V.description ?? '',
     category: V.category ?? CATEGORY.OTHER,
     layer: LAYERS.includes(V.layer) ? V.layer : LAYER.MAIN,
+    renderer: V.renderer === '3d' ? '3d' : '2d',
+    fallback: fallbackOf(V)?.id ?? null,
     inputs: Object.entries(V.inputs ?? {}).map(([name, def]) => ({
       name, kind: def.kind, default: copy(def.default),
     })),

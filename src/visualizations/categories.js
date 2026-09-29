@@ -13,6 +13,7 @@ export const CATEGORY = Object.freeze({
   MOTION: 'motion',
   CHAOS: 'chaos',
   ATTRACTORS: 'attractors',
+  SPACES: 'spaces',
   BACKGROUNDS: 'backgrounds',
   OVERLAYS: 'overlays',
   OTHER: 'other',
@@ -39,6 +40,11 @@ export const CATEGORIES = Object.freeze([
     id: CATEGORY.ATTRACTORS,
     label: 'Attractors',
     description: 'Strange attractors whose parameters drift with the music and jolt on hits.',
+  },
+  {
+    id: CATEGORY.SPACES,
+    label: 'Spaces',
+    description: 'Native 3D worlds and volumes to fly through and look into. Need 3D; each falls back to a 2D cousin.',
   },
   {
     id: CATEGORY.BACKGROUNDS,

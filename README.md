@@ -7,7 +7,9 @@ timeline decides which visualizations are on screen for each time window of
 the song — how each one is wired to the audio, and what palette it wears.
 
 No runtime dependencies — plain ES modules, with esbuild as the only dev
-dependency for producing a browser bundle.
+dependency for producing a browser bundle. The optional 3D visualizations use
+three.js, which the app passes in rather than the library bundling (see
+[3D rendering](#3d-rendering)).
 
 ## Building and running
 
@@ -287,7 +289,23 @@ attractors (`attractor` through `halvorsen`) are reported as their own
 | `aizawa` | Aizawa attractor as a rotating ribbon; a shell wound into tight concentric spirals by a fast reversed spin. Same reactions as `thomas`, and the one most worth trying at `distance: 'near'` |
 | `rossler` | Rössler attractor as a rotating ribbon; a broad flat disc with one lifted fold, so the silhouette changes markedly as the view turns. Its fold threshold drifts over a wide band, growing and shrinking the whole figure fourfold — it reads as the attractor rushing in and falling away. Same reactions as `thomas` |
 | `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling, and scaled past the frame so the horns run off every edge. Same reactions as `thomas` |
+| `thomas-3d`, `aizawa-3d`, `rossler-3d`, `halvorsen-3d` | the four flow attractors above, rendered with three.js: the same motion and options, with line width and brightness following depth so strands swell as they pass the camera and the far side recedes. Each falls back to its 2D version when 3D is off — see [3D rendering](#3d-rendering) |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
+
+**Spaces** — native 3D worlds and volumes, built for the three.js renderer
+rather than ported to it: lighting, depth, parallax and particle counts that
+Canvas 2D can't reach. All need [3D rendering](#3d-rendering) and fall back
+to the 2D visualization named in the last column when it's off. Each takes a
+`palette` option: `'psychedelic'` (default) cycles a full rainbow, `'style'`
+cycles between the window's `lineColor` and `accentColor` instead.
+
+| id | what it does | falls back to |
+|----|--------------|---------------|
+| `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and twist the lattice; mid drifts the twist, treble lights the haze, loudness sets the pace. Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
+| `spectrum-terrain` | low flight along a valley made of the song's history: rows laid at the horizon from the live spectrum scroll toward the camera, treble rippling the floor and bass heaving the canyon walls, over noise ridges. Hits roll waves of light out to the horizon; the sky is left transparent for a background layer to fill | `road` |
+| `nebula` | a spiral cloud of 150k motes (option `count`) seen from a slowly orbiting camera; motes swell and soften with nearness. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns the arms, treble sparkles | `particles` |
+| `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
+| `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell`, or `600-cell` (720 edges) | `rolling-ball` |
 
 **Backgrounds** — full-screen fields that draw in the background layer (see
 [Layers](#layers)), so they sit behind anything else in the window whatever
@@ -496,6 +514,7 @@ Two functions read it back as plain, JSON-safe copies:
 describe('thomas');
 // {
 //   id: 'thomas', label: 'Thomas', category: 'attractors', layer: 'main',
+//   renderer: '2d', fallback: null,   // a 3D one: renderer: '3d', fallback: 'thomas'
 //   description: 'Thomas attractor as a rotating 3D ribbon, …',
 //   inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
 //   options: [{ name: 'distance', kind: 'enum', values: ['near', 'med', 'far'], default: 'near' }],
@@ -536,6 +555,100 @@ rather than gliding, so scrubbing across sections doesn't smear.
 Style is global: everything on screen shares one palette, so simultaneous
 visualizations can't be styled apart.
 
+## 3D rendering
+
+Some visualizations render with three.js (`renderer: '3d'` in `describe()`).
+The library doesn't bundle three.js; to turn 3D on, pass the app's own copy:
+
+```js
+import * as THREE from 'three';   // any build ≥ r163
+
+const viz = new GloamingKit({ canvas, three: THREE, timeline: [
+  { from: 0, to: 30, visualizations: [VIZ.THOMAS_3D, VIZ.PERLIN_GLOW] },
+] });
+```
+
+3D visualizations mix freely with 2D ones. The engine is still a Canvas 2D
+compositor: a 3D visualization renders its scene on one WebGL renderer shared
+by all of them ([src/three-stage.js](src/three-stage.js)), then draws the
+result onto the 2D canvas as an image. So fades, [layers](#layers), window
+styles and routing all work on it unchanged, and feedback backgrounds like
+`kaleidoscope` echo 3D figures along with everything else. The cost is one
+extra full-frame image copy per 3D visualization on screen.
+
+**Turning it off.** Each 3D visualization names a 2D `fallback`, which is drawn
+in its place when:
+
+- no `three` was passed,
+- `enable3D: false` was passed, or
+- WebGL isn't available (the engine warns once and carries on in 2D).
+
+`viz.set3D(false)` switches at runtime — say, from a quality setting or when
+frames run slow. Anything on screen is swapped in place for its fallback,
+keeping its fade (its animation restarts, since the two share no state), and
+the WebGL context is released. `viz.set3D(true)` swaps back; `viz.is3D` says
+which is in effect. A 3D visualization with no fallback is skipped while 3D
+is off.
+
+**Lowering the cost instead.** `resolution3D: 0.5` (or
+`viz.setResolution3D(0.5)` at runtime) renders every 3D visualization at half
+resolution and upscales it — roughly a quarter of the pixel work, for a softer
+image, and nothing is re-created. It multiplies with each class's own
+`RESOLUTION`, which `fractal-cathedral` already sets to 0.5 because it is
+computed per pixel.
+
+### Writing a 3D visualization
+
+Extend `ThreeVisualization` and draw with `present()`:
+
+```js
+import { ThreeVisualization, register } from './src/engine.js';
+
+class Cube extends ThreeVisualization {
+  static id = 'cube';
+  static fallback = 'polygon-pulse';   // class or id; drawn when 3D is off
+  static inputs = { spin: { kind: 'level', default: { intensity: 'bass' } } };
+
+  constructor(opts) {
+    super(opts);
+    const { THREE } = this;             // the app's three.js
+    this.mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshNormalMaterial());
+    this.scene.add(this.mesh);          // released automatically on dispose()
+    this.camera.position.z = 3;
+  }
+
+  draw(ctx, dt) {
+    this.mesh.rotation.y += dt * (0.5 + this.in('spin'));
+    this.present(ctx);                  // render, and draw the result onto ctx
+  }
+}
+register(Cube);
+```
+
+`present(ctx, { glow })` can add the 2D-style glow (a `shadowBlur` in
+`style.shadowColor`) to the copy; it blurs the whole image, so render only what
+should glow in that pass. `color(css)` turns a style colour into a
+`THREE.Color` for shaders and materials. Anything else the visualization
+allocates on the GPU should be released in `dispose()`.
+
+[src/visualizations/three-shared.js](src/visualizations/three-shared.js) has
+the pieces the Spaces visualizations share: the `palette` option with matching
+GLSL and JS versions of the palette, `instanceGlow()` to make a lit instanced
+material glow in each instance's own colour, `fogToAlpha()` so fog fades
+distant geometry to transparent instead of painting a wall of fog colour over
+the layers beneath, and `logSpectrum()`.
+
+To give an existing 2D visualization a 3D renderer while keeping its
+simulation, apply `withThree` to it instead of extending `ThreeVisualization`
+— that's how the 3D attractors are built: `flowRibbon(Base)` in
+[src/visualizations/flow-ribbon.js](src/visualizations/flow-ribbon.js) takes any
+`FlowAttractor` subclass and replaces only its `draw()`, so a new flow
+attractor gets a 3D version with one line:
+
+```js
+class Lorenz3D extends flowRibbon(Lorenz) { static id = 'lorenz-3d'; }
+```
+
 ## Writing a visualization
 
 ```js
@@ -564,7 +677,9 @@ register(Strobe);                // now usable in timeline config as 'strobe'
 `onFrame(frame)` is called every tick before `draw` (the base class stashes it
 on `this.frame`) — use it for raw `spectrum`/`waveform` access, which isn't
 routed. The engine handles clearing the canvas, fade in/out, and
-`resize(width, height)`.
+`resize(width, height)`. If the visualization holds anything the garbage
+collector can't reclaim, release it in `dispose()`, which the engine calls
+once the window has ended and faded out.
 
 `static triggers = [...]` with `onTrigger(name, data)` still works for
 visualizations that don't declare slots, but it can't be rerouted.
