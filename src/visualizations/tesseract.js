@@ -2,7 +2,9 @@ import { ThreeVisualization } from './three-base.js';
 import { impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
-import { PALETTE_OPTION, paletteColor, isPsychedelic, instanceGlow } from './three-shared.js';
+import {
+  PALETTE_OPTION, DISTANCE_OPTION, Swoop, paletteColor, isPsychedelic, instanceGlow,
+} from './three-shared.js';
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 
@@ -102,8 +104,13 @@ const PLANES = [[0, 1], [0, 2], [1, 2], [0, 3], [1, 3], [2, 3]];
  *   spin     how fast every plane turns
  *   glow     how brightly the beads and tubes shine
  *
- * Options: `shape` picks the polytope — `tesseract` (the hypercube),
- * `24-cell`, or `600-cell`, a dense geodesic cage of 720 edges.
+ * Options: `shape` picks the polytope — `tesseract` (the hypercube), `24-cell`
+ * (the default: enough cells for the inside-out turning to read, few enough
+ * to follow), or `600-cell`, a dense geodesic cage of 720 edges.
+ * `distance` sets the camera: `near`, `med` or `far` circle it at a fixed
+ * range, and `orbit` (the default) hangs back, then swoops in and sweeps the
+ * figure past the camera close enough to fill the frame. See Swoop in
+ * three-shared.js.
  */
 export class Tesseract extends ThreeVisualization {
   static id = 'tesseract';
@@ -123,7 +130,8 @@ export class Tesseract extends ThreeVisualization {
 
   static options = {
     palette: PALETTE_OPTION,
-    shape: { kind: 'enum', values: Object.keys(POLYTOPES), default: 'tesseract' },
+    shape: { kind: 'enum', values: Object.keys(POLYTOPES), default: '24-cell' },
+    distance: DISTANCE_OPTION,
   };
 
   static W_DISTANCE = 2.2;   // 4D viewpoint distance along w, in 3-sphere radii
@@ -137,13 +145,14 @@ export class Tesseract extends ThreeVisualization {
   static PULSE = 0.18;
   static TUBE = 0.028;       // edge radius at unit projection
   static BEAD = 0.065;       // vertex radius at unit projection
+  static VIEW = 8;           // camera distance at `med`, world units
 
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
     this.psychedelic = isPsychedelic(this);
 
-    const shape = this.options.shape in POLYTOPES ? this.options.shape : 'tesseract';
+    const shape = this.options.shape in POLYTOPES ? this.options.shape : Tesseract.options.shape.default;
     this.vertices = POLYTOPES[shape]();
     this.edges = edgesOf(this.vertices);
     this.projected = this.vertices.map(() => ({ p: new THREE.Vector3(), k: 1, w: 0 }));
@@ -182,6 +191,11 @@ export class Tesseract extends ThreeVisualization {
     this.time = 0;
     this.hue = Math.random();
     this.camera.fov = 45;
+    this.camera.near = 0.05;
+    this.center = new THREE.Vector3();
+    // At the close point the camera is just outside the figure's outer cell,
+    // so edges stream past the lens.
+    this.swoop = new Swoop(this.options.distance, { near: 0.42, far: 2.1, period: 22 });
 
     // Scratch, so the per-frame loops never allocate.
     this.v = new Float64Array(4);
@@ -275,11 +289,13 @@ export class Tesseract extends ThreeVisualization {
     this.tubeGlow.value = 0.15 + glow * 0.5 + this.kick * 0.4;
     this.beadGlow.value = 0.5 + glow * 1.2 + this.kick;
 
-    // A slow orbit, so the 3D projection shows its depth too.
-    const orbit = this.time * 0.11;
+    // Circling, so the 3D projection shows its depth too.
+    this.swoop.update(dt, 0.11);
+    const { angle, scale } = this.swoop;
+    const dist = Tesseract.VIEW * scale;
     const cam = this.camera;
-    cam.position.set(Math.cos(orbit) * 8, Math.sin(this.time * 0.07) * 2.5, Math.sin(orbit) * 8);
-    cam.lookAt(0, 0, 0);
+    cam.position.set(Math.cos(angle) * dist, Math.sin(this.time * 0.07) * 0.3 * dist, Math.sin(angle) * dist);
+    this.swoop.aim(cam, this.center, SCALE);
     if (cam.aspect !== this.width / this.height) {
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();

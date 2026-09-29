@@ -5,6 +5,7 @@ import { TRIGGER } from '../analyzer.js';
 import { mulberry32 } from '../noise.js';
 import {
   PALETTE_OPTION, PALETTE_GLSL, paletteUniforms, updatePalette, isPsychedelic,
+  DISTANCE_OPTION, Swoop,
 } from './three-shared.js';
 
 const SHOCKS = 4;
@@ -22,8 +23,13 @@ const SHOCKS = 4;
  * Depth is the point of it. Motes are sized by distance, so the ones the
  * camera passes near swell into soft out-of-focus discs (dimmed to keep
  * their total light constant, like bokeh) while the far side of the cloud is
- * fine dust, and the orbit swings the camera from outside the cloud to just
- * inside its rim.
+ * fine dust.
+ *
+ * Option `distance` sets where the camera watches from: `near`, `med` or
+ * `far` circle the cloud at a fixed range, and `orbit` (the default) flies a
+ * loop — hanging far back with the whole galaxy small in frame, then diving
+ * in over the disc and sweeping across it close enough to fly through the
+ * outer arms, before climbing away again. See Swoop in three-shared.js.
  *
  * Reactions:
  *
@@ -53,6 +59,7 @@ export class Nebula extends ThreeVisualization {
 
   static options = {
     palette: PALETTE_OPTION,
+    distance: DISTANCE_OPTION,
     count: { kind: 'number', default: 150000, min: 10000, max: 400000, step: 10000 },
   };
 
@@ -60,7 +67,8 @@ export class Nebula extends ThreeVisualization {
   static ARMS = 3;
   static WIND = 5.5;           // radians of arm twist from core to rim
   static SWIRL = [0.05, 0.25]; // arm turn rate: [idle, added at full swirl]
-  static ORBIT = [0.03, 0.08]; // camera orbit rate, rad/s
+  static ORBIT = [0.03, 0.08]; // camera orbit rate at `med`, rad/s
+  static VIEW = 2;             // camera distance at `med`, in radii
   static SHOCK_SPEED = 9;      // world units/s
   static SHOCK_DECAY = 0.7;
 
@@ -143,11 +151,14 @@ export class Nebula extends ThreeVisualization {
     this.time = 0;
     this.swirl = 0;
     this.orbit = rand() * Math.PI * 2;
+    // Down to 0.35 × 2 radii: over the disc, inside the outer arms.
+    this.swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.3, period: 28 });
     this.hue = rand();
     this.shocks = [];   // { radius, strength }
     this.camera.fov = 60;
     this.camera.near = 0.05;
     this.camera.far = 200;
+    this.center = new THREE.Vector3();
   }
 
   onInput(slot, data) {
@@ -162,6 +173,7 @@ export class Nebula extends ThreeVisualization {
     this.time += dt;
     this.swirl += dt * (SWIRL[0] + swirl * SWIRL[1]);
     this.orbit += dt * (ORBIT[0] + swirl * ORBIT[1]);
+    this.swoop.update(dt, ORBIT[0] + swirl * ORBIT[1]);
     this.hue += dt * 0.02;
 
     const u = this.uniforms;
@@ -177,19 +189,21 @@ export class Nebula extends ThreeVisualization {
     }
     this.shocks = this.shocks.filter((s) => s.radius < RADIUS * 2.5);
 
-    // Swing in toward the rim and back out, rising high over the disc and
-    // sinking toward it — but staying above it, since edge-on the arms
-    // collapse into a line. Closer than about 1.5 radii the near motes blur
-    // over everything and the arms leave the frame.
-    const dist = RADIUS * (2.0 + 0.5 * Math.sin(this.orbit * 0.9 + 1));
-    const lift = 0.45 + 0.75 * (0.5 + 0.5 * Math.sin(this.orbit * 0.63));   // 26°–69° above the disc
+    // Rising high over the disc and sinking toward it — but staying above it,
+    // since edge-on the arms collapse into a line. On a close pass it sinks
+    // lower still, so the sweep skims across the arms.
+    const { scale, angle, close } = this.swoop;
+    const dist = RADIUS * Nebula.VIEW * scale * (1 + 0.12 * Math.sin(this.orbit * 0.9 + 1));
+    const lift = (0.45 + 0.75 * (0.5 + 0.5 * Math.sin(this.orbit * 0.63))) * (1 - 0.45 * close);
     const cam = this.camera;
     cam.position.set(
-      Math.cos(this.orbit) * dist * Math.cos(lift),
+      Math.cos(angle) * dist * Math.cos(lift),
       Math.sin(lift) * dist,
-      Math.sin(this.orbit) * dist * Math.cos(lift),
+      Math.sin(angle) * dist * Math.cos(lift),
     );
-    cam.lookAt(0, 0, 0);
+    // Aim aside by a fraction of the radius only: close in, the cloud is far
+    // wider than the view, and a full radius swings it out of frame.
+    this.swoop.aim(cam, this.center, RADIUS * 0.3);
     if (cam.aspect !== this.width / this.height) {
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();

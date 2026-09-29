@@ -9,6 +9,10 @@ import {
 
 const PULSES = 3;
 
+const SPEEDS = { slow: 0.3, med: 0.55, fast: 1 };
+const DEFORMS = ['twist', 'ripple', 'breathe'];
+const AMOUNTS = { off: 0, low: 0.5, med: 1, high: 1.8 };
+
 /**
  * FractalCathedral — a flight down a nave carved through an endless fractal.
  *
@@ -25,16 +29,33 @@ const PULSES = 3;
  * Reactions:
  *
  *   pulse    a hit fires a ring of light down the nave ahead of the camera,
- *            and twists the lattice (a decaying jolt to the fold angle)
- *   morph    how fast the fold angle drifts, so the arches slowly writhe
+ *            and kicks the deformation
+ *   warp     how deformed the walls are. Bass by default; bind it to any
+ *            band to have that part of the mix bend the architecture:
+ *            `bind: { warp: { intensity: 'treble' } }`
+ *   morph    how fast the deformation cycles, so the arches slowly writhe
  *   shimmer  the haze of light the rays pick up grazing the walls, and how
  *            fast the colours cycle
- *   travel   flight speed, heavily smoothed — speed that follows the beat
- *            lurches, so the song sets the pace of a passage instead
+ *   travel   flight speed within the `speed` setting, heavily smoothed —
+ *            speed that follows the beat lurches, so the song sets the pace
+ *            of a passage instead
  *
- * The fold angle rotates each cell of the lattice about its own centre, not
- * the world's, so it deforms the architecture in place; rotating about the
- * origin would swing distant cells through huge arcs.
+ * Options:
+ *
+ *   speed         'slow' | 'med' (default) | 'fast'
+ *   deform        how the walls deform:
+ *                   'twist'   (default) each cell turns about its own centre,
+ *                             so arches wring and lean
+ *                   'ripple'  space itself undulates, so walls flow like
+ *                             liquid
+ *                   'breathe' the holes at every scale open and close out of
+ *                             phase, so walls thin to lace and thicken again
+ *   deformAmount  'off' | 'low' | 'med' (default) | 'high'
+ *
+ * Deformations act on each cell about its own centre, never the world's
+ * origin; rotating about the origin would swing distant cells through huge
+ * arcs. The nave is carved after deforming, so the flight path stays clear
+ * however hard the walls move.
  */
 export class FractalCathedral extends ThreeVisualization {
   static id = 'fractal-cathedral';
@@ -52,20 +73,35 @@ export class FractalCathedral extends ThreeVisualization {
       smooth: 0.15,
     } },
     travel:  { kind: 'level', default: { intensity: 'rms', smooth: 2 } },
+    // How loud the bass is, with its movement on top so the walls flex on
+    // the beat and not only across a passage.
+    warp:    { kind: 'level', default: {
+      sum: [{ intensity: 'bass', gain: 0.5 }, { relative: 'bass', gain: 0.5 }],
+      smooth: 0.15,
+    } },
   };
 
   static options = {
     palette: PALETTE_OPTION,
+    speed: { kind: 'enum', values: Object.keys(SPEEDS), default: 'med' },
+    deform: { kind: 'enum', values: DEFORMS, default: 'twist' },
+    deformAmount: { kind: 'enum', values: Object.keys(AMOUNTS), default: 'med' },
   };
 
   // Every pixel marches up to ~100 steps through the fractal, so this is the
   // one to render small. Upscaled, the softness reads as atmosphere.
   static RESOLUTION = 0.5;
 
+  // At 'fast'; the other speeds scale it (see SPEEDS).
   static SPEED = [0.7, 1.1];      // world units/s: [idle, added at full travel]
-  static FOLD = 0.22;             // drift amplitude of the fold angle, rad
-  static FOLD_RATE = [0.12, 0.5]; // drift speed: [idle, added at full morph]
-  static JOLT = 0.18;             // fold kick at full strength, rad
+  // Deformation at 'med' amount, per unit of the warp mix below: the twist's
+  // angle in radians, the ripple's amplitude and the breathing's depth.
+  static TWIST = 0.3;
+  static RIPPLE = 0.35;
+  static BREATHE = 0.55;
+  static WARP = [0.25, 0.9];      // deformation mix: [idle, added at full warp]
+  static FOLD_RATE = [0.12, 0.5]; // cycle speed: [idle, added at full morph]
+  static JOLT = 0.18;             // twist kick at full strength, rad
   static JOLT_DECAY = 1.4;
   static PULSE_SPEED = 7;         // world units/s the light rings travel ahead
   static PULSE_DECAY = 0.9;
@@ -74,9 +110,19 @@ export class FractalCathedral extends ThreeVisualization {
     super(opts);
     const THREE = this.THREE;
     this.psychedelic = isPsychedelic(this);
+    const pick = (name, table) => {
+      const value = this.options[name] ?? FractalCathedral.options[name].default;
+      if (!(value in table)) console.warn(`GloamingKit: fractal-cathedral ${name} '${value}'; expected ${Object.keys(table).join('|')}`);
+      return value in table ? value : FractalCathedral.options[name].default;
+    };
+    this.pace = SPEEDS[pick('speed', SPEEDS)];
+    this.amount = AMOUNTS[pick('deformAmount', AMOUNTS)];
+    this.deform = pick('deform', Object.fromEntries(DEFORMS.map((d) => [d, d])));
 
     this.z = 0;
-    this.speed = FractalCathedral.SPEED[0];
+    this.speed = FractalCathedral.SPEED[0] * this.pace;
+    this.time = 0;
+    this.kick = 0;
     this.foldT = Math.random() * 10;
     this.jolt = 0;
     this.hue = Math.random();
@@ -89,6 +135,9 @@ export class FractalCathedral extends ThreeVisualization {
       uZ: { value: 0 },
       uRoll: { value: 0 },
       uFold: { value: 0 },
+      uWarp: { value: 0 },
+      uTime: { value: 0 },
+      uStep: { value: 0.75 },
       uHue: { value: 0 },
       uHaze: { value: 0.3 },
       uPulses: { value: Array.from({ length: PULSES }, () => new THREE.Vector2(-1e3, 0)) },
@@ -99,6 +148,8 @@ export class FractalCathedral extends ThreeVisualization {
         uniforms: this.uniforms,
         vertexShader: FULLSCREEN_VERTEX,
         fragmentShader: FRAGMENT,
+        // Compiled in, not branched on: the map runs millions of times a frame.
+        defines: { DEFORM: DEFORMS.indexOf(this.deform) },
         depthTest: false,
         depthWrite: false,
       }),
@@ -110,20 +161,25 @@ export class FractalCathedral extends ThreeVisualization {
   onInput(slot, data) {
     if (slot !== 'pulse') return;
     const size = impact(data);
-    const { JOLT } = FractalCathedral;
+    const JOLT = FractalCathedral.JOLT * this.amount;
     this.jolt = Math.max(-JOLT, Math.min(JOLT, this.jolt + (Math.random() < 0.5 ? -1 : 1) * size * JOLT));
+    this.kick = Math.max(this.kick, size);
     this.pulses.push({ age: 0, strength: size });
     if (this.pulses.length > PULSES) this.pulses.shift();
   }
 
   draw(ctx, dt) {
-    const { SPEED, FOLD, FOLD_RATE, JOLT_DECAY, PULSE_SPEED, PULSE_DECAY } = FractalCathedral;
+    const {
+      SPEED, TWIST, RIPPLE, BREATHE, WARP, FOLD_RATE, JOLT_DECAY, PULSE_SPEED, PULSE_DECAY,
+    } = FractalCathedral;
 
     // Rates, integrated — see "Drive rates, not positions" in the README.
-    this.speed = approach(this.speed, SPEED[0] + this.in('travel') * SPEED[1], 1, dt);
+    this.speed = approach(this.speed, (SPEED[0] + this.in('travel') * SPEED[1]) * this.pace, 1, dt);
     this.z += this.speed * dt;
+    this.time += dt;
     this.foldT += dt * (FOLD_RATE[0] + this.in('morph') * FOLD_RATE[1]);
     this.jolt *= Math.exp(-dt * JOLT_DECAY);
+    this.kick *= Math.exp(-dt * 2.5);
     this.hue += dt * (0.02 + this.in('shimmer') * 0.08);
     this.roll = Math.sin(this.foldT * 0.7) * 0.35;
 
@@ -143,7 +199,15 @@ export class FractalCathedral extends ThreeVisualization {
     u.uAspect.value = this.width / this.height;
     u.uZ.value = this.z;
     u.uRoll.value = this.roll;
-    u.uFold.value = Math.sin(this.foldT) * FOLD + this.jolt;
+    // Deformation depth: the option's amount, scaled by the warp band.
+    const warp = this.amount * (WARP[0] + this.in('warp') * WARP[1]);
+    u.uFold.value = Math.sin(this.foldT) * TWIST * warp + this.jolt;
+    u.uWarp.value = this.deform === 'ripple'
+      ? (warp + this.kick * 0.6 * this.amount) * RIPPLE
+      : (warp + this.kick * 0.6 * this.amount) * BREATHE;
+    u.uTime.value = this.foldT * 4;
+    // Ripples bend the distance field, so march in shorter steps to match.
+    u.uStep.value = this.deform === 'ripple' ? 0.75 / (1 + u.uWarp.value * 1.2) : 0.75;
     u.uHue.value = this.hue;
     u.uHaze.value = 0.25 + this.in('shimmer') * 0.9;
     this.present(ctx);
@@ -155,7 +219,10 @@ ${PALETTE_GLSL}
 uniform float uAspect;
 uniform float uZ;
 uniform float uRoll;
-uniform float uFold;
+uniform float uFold;   // twist angle
+uniform float uWarp;   // ripple amplitude / breathing depth
+uniform float uTime;   // deformation clock, driven by morph
+uniform float uStep;   // march step, as a fraction of the distance
 uniform float uHue;
 uniform float uHaze;
 uniform vec2 uPulses[${PULSES}];   // (world z, strength)
@@ -189,24 +256,38 @@ float trap;   // which scale a hit landed on, for colouring; set by map()
 float map(vec3 p) {
   // Infinite Menger sponge: starting from solid space, cut the cross-shaped
   // hole of every cell at each scale (iq's construction, without the
-  // bounding box). Each cell is twisted about its own centre by uFold.
+  // bounding box), deformed per DEFORM.
   vec3 q = p * CELL;
+#if DEFORM == 1
+  // Ripple: displace the space the sponge is built in. Three crossed waves,
+  // each along a different axis, so no wall stays flat.
+  q += sin(q.zxy * 2.1 + vec3(uTime, uTime * 0.8, uTime * 1.2)) * uWarp * CELL;
+#endif
   float d = -1e9;
   float s = 1.0;
   trap = 0.0;
   for (int m = 0; m < 4; m++) {
     vec3 a = mod(q * s, 2.0) - 1.0;
     float k = float(m + 1);
+#if DEFORM == 0
+    // Twist each cell about its own centre. The first scale only turns about
+    // the flight axis, which spins the tunnel around the camera without
+    // leaning its walls into the path.
     a.xy *= rot(uFold * k);
-    // The first scale only turns about the flight axis, which spins the
-    // tunnel around the camera without leaning its walls into the path.
     if (m > 0) a.yz *= rot(uFold * 0.6 * k);
+    float hole = 1.0;
+#elif DEFORM == 2
+    // Breathe: each scale's holes open and close on their own phase.
+    float hole = clamp(1.0 + uWarp * sin(uTime * 1.3 + k * 1.9), 0.3, 2.2);
+#else
+    float hole = 1.0;
+#endif
     s *= 3.0;
     vec3 r = abs(1.0 - 3.0 * abs(a));
     float da = max(r.x, r.y);
     float db = max(r.y, r.z);
     float dc = max(r.z, r.x);
-    float c = (min(da, min(db, dc)) - 1.0) / s;
+    float c = (min(da, min(db, dc)) - hole) / s;
     if (c > d) {
       d = c;
       trap = float(m) * 0.23 + length(a) * 0.12;
@@ -246,7 +327,7 @@ void main() {
     // Light picked up passing close to a surface: the glowing air.
     haze += exp(-d * 14.0);
     if (d < 0.0006 * t + 0.0004) { hit = true; break; }
-    t += d * 0.75;   // under-step: the fold twist bends the distance field
+    t += d * uStep;   // under-step: deformation bends the distance field
     steps += 1.0;
     if (t > FAR) break;
   }

@@ -6,13 +6,96 @@
 /**
  * The `palette` option every native 3D visualization takes.
  *
+ *   'style'        (default) cycles between the style's lineColor and
+ *                  accentColor, so the scene wears the window's palette like
+ *                  everything else
  *   'psychedelic'  a full cycling rainbow, independent of the style colours
- *   'style'        cycles between the style's lineColor and accentColor, so
- *                  the scene wears the window's palette like everything else
  */
 export const PALETTE_OPTION = Object.freeze({
-  kind: 'enum', values: ['psychedelic', 'style'], default: 'psychedelic',
+  kind: 'enum', values: ['style', 'psychedelic'], default: 'style',
 });
+
+/**
+ * The `distance` option for visualizations that look at an object rather
+ * than flying through a space (nebula, tesseract). The first three hold the
+ * camera at a fixed distance, as multiples of the visualization's own; the
+ * last is a flight path — see Swoop.
+ */
+export const DISTANCE_OPTION = Object.freeze({
+  kind: 'enum', values: ['near', 'med', 'far', 'orbit'], default: 'orbit',
+});
+const DISTANCES = { near: 0.6, med: 1, far: 1.6 };
+
+/**
+ * Where the camera is relative to the object it watches, advanced each frame.
+ *
+ * At a fixed distance it circles slowly. On `orbit` it follows a looping
+ * flight instead: it hangs back far off, then dives in, whips round the
+ * object close enough that it fills the frame, and climbs away again. Going
+ * faster round the object the closer it is — as anything in orbit does — is
+ * what turns the close pass into a sweep rather than a slow zoom.
+ *
+ * During the pass the camera also aims off to the side of the object rather
+ * than at it, so the object sweeps across the frame instead of swelling
+ * dead centre.
+ *
+ *   const swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.4 });
+ *   swoop.update(dt, rate);   // rate: radians/s round the object at distance 1
+ *   swoop.scale      // distance, as a multiple of the visualization's own
+ *   swoop.angle      // heading round the object
+ *   swoop.close      // 0 far off → 1 at the closest point of the pass
+ *   swoop.aside      // signed sideways aim, in object radii
+ */
+export class Swoop {
+  /**
+   * `near` and `far` bound the orbit's distance multiplier; `period` is
+   * roughly how many seconds one swoop takes.
+   */
+  constructor(mode, { near = 0.35, far = 2.4, period = 26 } = {}) {
+    if (mode !== undefined && !DISTANCE_OPTION.values.includes(mode)) {
+      console.warn(`GloamingKit: distance '${mode}'; expected ${DISTANCE_OPTION.values.join('|')}`);
+    }
+    this.mode = DISTANCE_OPTION.values.includes(mode) ? mode : DISTANCE_OPTION.default;
+    this.near = near;
+    this.far = far;
+    this.period = period;
+    // Start partway out, heading in, so the first pass comes early.
+    this.phase = Math.PI * 0.6;
+    this.angle = Math.random() * Math.PI * 2;
+    this.scale = DISTANCES[this.mode] ?? 1;
+    this.close = 0;
+    this.aside = 0;
+  }
+
+  update(dt, rate) {
+    if (this.mode !== 'orbit') {
+      this.angle += dt * rate;
+      return;
+    }
+    this.phase += dt * (Math.PI * 2) / this.period;
+    // 0 at the closest point, 1 farthest; the power makes the camera linger
+    // far out and spend only a moment close in.
+    const out = Math.pow(0.5 - 0.5 * Math.cos(this.phase), 0.6);
+    this.scale = this.near + (this.far - this.near) * out;
+    this.close = 1 - out;
+    this.angle += dt * rate / this.scale;
+    this.aside = Math.pow(this.close, 1.5) * 0.9 * Math.sin(this.phase * 0.5 + 1);
+  }
+
+  /**
+   * Point `camera` at `target` (a THREE.Vector3), offset sideways by `aside`
+   * × `radius` during a close pass.
+   */
+  aim(camera, target, radius) {
+    if (!this.aside) {
+      camera.lookAt(target);
+      return;
+    }
+    const f = camera.position.clone().sub(target).normalize();
+    const side = f.cross(camera.up).normalize().multiplyScalar(this.aside * radius);
+    camera.lookAt(target.clone().add(side));
+  }
+}
 
 /**
  * GLSL for the palette: `palette(t)` is periodic in t with period 1. Declares

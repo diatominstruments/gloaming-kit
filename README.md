@@ -296,16 +296,23 @@ attractors (`attractor` through `halvorsen`) are reported as their own
 rather than ported to it: lighting, depth, parallax and particle counts that
 Canvas 2D can't reach. All need [3D rendering](#3d-rendering) and fall back
 to the 2D visualization named in the last column when it's off. Each takes a
-`palette` option: `'psychedelic'` (default) cycles a full rainbow, `'style'`
-cycles between the window's `lineColor` and `accentColor` instead.
+`palette` option: `'style'` (default) cycles between the window's
+`lineColor` and `accentColor`, so the scene wears the same colours as
+everything else; `'psychedelic'` cycles a full rainbow instead.
+
+`nebula` and `tesseract` look at an object rather than flying through a
+space, and take a `distance` option: `near`, `med` and `far` circle it at a
+fixed range, and `orbit` (default) flies a loop — hanging far back with the
+object small in frame, then diving in and sweeping it past the camera, off to
+one side and filling the frame, before climbing away again.
 
 | id | what it does | falls back to |
 |----|--------------|---------------|
-| `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and twist the lattice; mid drifts the twist, treble lights the haze, loudness sets the pace. Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
+| `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and kick the deformation; the `warp` input (bass by default — rebind it to tie the walls to another band) sets how deformed the walls are, mid how fast the deformation cycles, treble lights the haze. Options: `speed` (`slow`, `med`, `fast`), `deform` (`twist` wrings each cell, `ripple` makes walls flow like liquid, `breathe` opens and closes the holes at every scale until walls thin to lace), `deformAmount` (`off`, `low`, `med`, `high`). Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
 | `spectrum-terrain` | low flight along a valley made of the song's history: rows laid at the horizon from the live spectrum scroll toward the camera, treble rippling the floor and bass heaving the canyon walls, over noise ridges. Hits roll waves of light out to the horizon; the sky is left transparent for a background layer to fill | `road` |
-| `nebula` | a spiral cloud of 150k motes (option `count`) seen from a slowly orbiting camera; motes swell and soften with nearness. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns the arms, treble sparkles | `particles` |
+| `nebula` | a spiral galaxy of 150k motes (option `count`), watched from `distance`; motes swell and soften with nearness, so the close pass of `orbit` skims through blurred arms. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns the arms, treble sparkles | `particles` |
 | `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
-| `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell`, or `600-cell` (720 edges) | `rolling-ball` |
+| `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell` (default), or `600-cell` (720 edges); and `distance` | `rolling-ball` |
 
 **Backgrounds** — full-screen fields that draw in the background layer (see
 [Layers](#layers)), so they sit behind anything else in the window whatever
