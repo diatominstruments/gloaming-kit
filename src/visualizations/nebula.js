@@ -9,6 +9,115 @@ import {
 } from './three-shared.js';
 
 const SHOCKS = 4;
+const TAU = Math.PI * 2;
+
+/*
+ * Shapes. Each places one mote, returning [radius, angle, height] in
+ * cylindrical coordinates about the spin axis, in units of RADIUS. The
+ * shader turns everything about that axis, so every shape swirls, flows and
+ * takes shockwaves the same way; only where the motes start differs.
+ *
+ * `g` carries the random sources and the `arms` option.
+ */
+
+// A loose sphere around everything.
+const halo = (g) => [0.3 + g.rand() * 0.9, g.rand() * TAU, g.gauss() * 0.45];
+
+// A round glow at the centre. Its own population, because thickening a disc
+// toward its centre makes a tall thin column instead — lots of height on
+// almost no radius.
+const bulge = (g, size = 0.1) => {
+  const x = g.gauss() * size;
+  const z = g.gauss() * size;
+  return [Math.hypot(x, z), Math.atan2(z, x), g.gauss() * size * 0.8];
+};
+
+// One mote on a spiral arm, wound further with radius and spread wider
+// toward the core; arms begin at `from` (a bar's end, or the centre).
+const arm = (g, from = 0, wind = 5.5) => {
+  const r = from + (1 - from) * Math.pow(g.rand(), 0.75);
+  const k = Math.floor(g.rand() * g.arms);
+  const along = r - from;
+  return [
+    r,
+    (k / g.arms) * TAU + along * wind + g.gauss() * (0.1 + 0.25 * (1 - along)),
+    g.gauss() * (0.02 + 0.04 * (1 - r)),
+  ];
+};
+
+const SHAPES = {
+  // Arms wound out from a round core.
+  spiral: (g) => {
+    const k = g.rand();
+    if (k < 0.1) return halo(g);
+    if (k < 0.2) return bulge(g);
+    return arm(g);
+  },
+
+  // A straight bar through the core, with the arms trailing from its ends.
+  // Reads best with two arms.
+  barred: (g) => {
+    const k = g.rand();
+    if (k < 0.08) return halo(g);
+    if (k < 0.16) return bulge(g, 0.07);
+    if (k < 0.36) {
+      const x = (g.rand() * 2 - 1) * 0.32;
+      return [Math.abs(x) + Math.abs(g.gauss()) * 0.02, x < 0 ? Math.PI : 0, g.gauss() * 0.03];
+    }
+    return arm(g, 0.32, 4.5);
+  },
+
+  // A bright core inside a detached ring, with a faint disc between them —
+  // Hoag's Object.
+  ring: (g) => {
+    const k = g.rand();
+    if (k < 0.08) return halo(g);
+    if (k < 0.22) return bulge(g, 0.08);
+    if (k < 0.35) return [Math.pow(g.rand(), 0.5) * 0.55, g.rand() * TAU, g.gauss() * 0.02];
+    return [0.75 + g.gauss() * 0.05, g.rand() * TAU, g.gauss() * 0.03];
+  },
+
+  // A whirlpool: arms spiralling down a funnel that narrows into a drain
+  // falling away below it.
+  vortex: (g) => {
+    const k = g.rand();
+    if (k < 0.1) {
+      return [Math.abs(g.gauss()) * 0.03, g.rand() * TAU, -0.3 - Math.pow(g.rand(), 0.7) * 0.9];
+    }
+    const [r, angle] = arm(g, 0.03, 7);
+    return [r, angle, 0.45 - 0.75 * Math.pow(1 - r, 2.2) + g.gauss() * 0.015];
+  },
+
+  // A thin disc round a blazing core, firing two twisting jets out of its
+  // poles — a quasar.
+  quasar: (g) => {
+    const k = g.rand();
+    if (k < 0.08) return halo(g);
+    if (k < 0.18) return bulge(g, 0.05);
+    if (k < 0.55) return [0.08 + Math.pow(g.rand(), 0.6) * 0.62, g.rand() * TAU, g.gauss() * 0.01];
+    // Jets: two strands each, corkscrewing and widening as they go.
+    const side = g.rand() < 0.5 ? -1 : 1;
+    const along = Math.pow(g.rand(), 0.7) * 1.3;
+    const strand = g.rand() < 0.5 ? 0 : Math.PI;
+    return [
+      0.015 + along * 0.07 + Math.abs(g.gauss()) * 0.015,
+      strand + along * 9 + g.gauss() * 0.25,
+      side * (0.04 + along),
+    ];
+  },
+
+  // A planetary nebula: a hollow hourglass shell thrown off by a small hot
+  // star, pinched at the waist and swelling into two lobes.
+  shell: (g) => {
+    const k = g.rand();
+    if (k < 0.07) return bulge(g, 0.03);
+    if (k < 0.17) return halo(g);
+    const cos = g.rand() * 2 - 1;
+    const sin = Math.sqrt(1 - cos * cos);
+    const rho = 0.38 * (1 + 1.4 * cos * cos) * (1 + g.gauss() * 0.04);
+    return [rho * sin, g.rand() * TAU, rho * cos];
+  },
+};
 
 /**
  * Nebula — a swirling cloud of light the camera drifts around and through.
@@ -50,6 +159,13 @@ export class Nebula extends ThreeVisualization {
 
   static inputs = {
     shock:   { kind: 'event', default: TRIGGER.BASS },
+    // Drives the colour: waves of colour flow outward through the cloud at a
+    // rate set by this band, and the accent spreads further when it's loud.
+    // Rebind to follow another band: `bind: { color: { intensity: 'bass' } }`.
+    color:   { kind: 'level', default: {
+      sum: [{ intensity: 'highMid', gain: 0.6 }, { relative: 'highMid', gain: 0.4 }],
+      smooth: 0.2,
+    } },
     swirl:   { kind: 'level', default: { intensity: 'mid', smooth: 0.8 } },
     twinkle: { kind: 'level', default: {
       sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],
@@ -60,60 +176,44 @@ export class Nebula extends ThreeVisualization {
   static options = {
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
+    shape: { kind: 'enum', values: Object.keys(SHAPES), default: 'spiral' },
+    arms: { kind: 'number', default: 3, min: 1, max: 6, step: 1 },
     count: { kind: 'number', default: 150000, min: 10000, max: 400000, step: 10000 },
   };
 
   static RADIUS = 10;          // world units
-  static ARMS = 3;
-  static WIND = 5.5;           // radians of arm twist from core to rim
   static SWIRL = [0.05, 0.25]; // arm turn rate: [idle, added at full swirl]
   static ORBIT = [0.03, 0.08]; // camera orbit rate at `med`, rad/s
   static VIEW = 2;             // camera distance at `med`, in radii
+  // Colour waves flowing outward, in palette cycles per second: [idle,
+  // added at full `color`].
+  static COLOR_FLOW = [0.04, 0.5];
   static SHOCK_SPEED = 9;      // world units/s
   static SHOCK_DECAY = 0.7;
 
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
-    const { ARMS, WIND } = Nebula;
     this.psychedelic = isPsychedelic(this);
 
     const count = Math.round(this.options.count ?? Nebula.options.count.default);
     const rand = mulberry32(Math.floor(Math.random() * 1e9));
-    const gauss = () => {
+    const g = {
+      rand,
       // Box–Muller; good enough for scattering motes.
-      const u = Math.max(1e-6, rand());
-      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+      gauss: () => Math.sqrt(-2 * Math.log(Math.max(1e-6, rand()))) * Math.cos(TAU * rand()),
+      arms: Math.max(1, Math.min(6, Math.round(this.options.arms ?? Nebula.options.arms.default))),
     };
+    const shapeName = this.options.shape ?? Nebula.options.shape.default;
+    if (!(shapeName in SHAPES)) {
+      console.warn(`GloamingKit: nebula shape '${shapeName}'; expected ${Object.keys(SHAPES).join('|')}`);
+    }
+    const place = SHAPES[shapeName] ?? SHAPES.spiral;
 
-    // (radius 0–1, angle, height, random): everything the shader needs.
+    // (radius, angle, height, random): everything the shader needs.
     const seeds = new Float32Array(count * 4);
     for (let i = 0; i < count; i++) {
-      let r;
-      let angle;
-      let height;
-      const kind = rand();
-      if (kind < 0.1) {
-        // Halo: a loose sphere around everything.
-        r = 0.3 + rand() * 0.9;
-        angle = rand() * Math.PI * 2;
-        height = gauss() * 0.45;
-      } else if (kind < 0.2) {
-        // Bulge: a round glow at the core. Its own population, because
-        // thickening the arms near the centre makes a tall thin column
-        // instead — lots of height on almost no radius.
-        const x = gauss() * 0.1;
-        const z = gauss() * 0.1;
-        r = Math.hypot(x, z);
-        angle = Math.atan2(z, x);
-        height = gauss() * 0.08;
-      } else {
-        // Arms: wound further with radius, spread wider toward the core.
-        r = Math.pow(rand(), 0.75);
-        const arm = Math.floor(rand() * ARMS);
-        angle = (arm / ARMS) * Math.PI * 2 + r * WIND + gauss() * (0.1 + 0.25 * (1 - r));
-        height = gauss() * (0.02 + 0.04 * (1 - r));
-      }
+      const [r, angle, height] = place(g);
       seeds.set([r, angle, height, rand()], i * 4);
     }
 
@@ -127,6 +227,7 @@ export class Nebula extends ThreeVisualization {
       uTime: { value: 0 },
       uSwirl: { value: 0 },
       uHue: { value: 0 },
+      uColor: { value: 0 },
       uTwinkle: { value: 0 },
       uPixels: { value: 1 },
       uShocks: { value: Array.from({ length: SHOCKS }, () => new THREE.Vector2(-1e3, 0)) },
@@ -174,7 +275,11 @@ export class Nebula extends ThreeVisualization {
     this.swirl += dt * (SWIRL[0] + swirl * SWIRL[1]);
     this.orbit += dt * (ORBIT[0] + swirl * ORBIT[1]);
     this.swoop.update(dt, ORBIT[0] + swirl * ORBIT[1]);
-    this.hue += dt * 0.02;
+    // Colour phase, integrated: the band sets how fast the colour waves flow
+    // outward, never where they are, so a loud frame speeds them rather
+    // than jumping them.
+    const color = this.in('color');
+    this.hue += dt * (Nebula.COLOR_FLOW[0] + color * Nebula.COLOR_FLOW[1]);
 
     const u = this.uniforms;
     for (let i = 0; i < SHOCKS; i++) {
@@ -201,9 +306,7 @@ export class Nebula extends ThreeVisualization {
       Math.sin(lift) * dist,
       Math.sin(angle) * dist * Math.cos(lift),
     );
-    // Aim aside by a fraction of the radius only: close in, the cloud is far
-    // wider than the view, and a full radius swings it out of frame.
-    this.swoop.aim(cam, this.center, RADIUS * 0.3);
+    this.swoop.aim(cam, this.center);
     if (cam.aspect !== this.width / this.height) {
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();
@@ -213,6 +316,7 @@ export class Nebula extends ThreeVisualization {
     u.uTime.value = this.time;
     u.uSwirl.value = this.swirl;
     u.uHue.value = this.hue;
+    u.uColor.value = color;
     u.uTwinkle.value = this.in('twinkle');
     // World size → device pixels at unit distance, for gl_PointSize.
     const fov = (cam.fov * Math.PI) / 180;
@@ -228,7 +332,8 @@ attribute vec4 seed;   // (radius 0–1, angle, height, random)
 uniform float uRadius;
 uniform float uTime;
 uniform float uSwirl;
-uniform float uHue;
+uniform float uHue;      // colour phase; advancing it moves the waves outward
+uniform float uColor;    // the colour band's level
 uniform float uTwinkle;
 uniform float uPixels;
 uniform vec2 uShocks[${SHOCKS}];   // (radius, strength)
@@ -274,10 +379,17 @@ void main() {
 
   // Brighter toward the core; sparkling with the treble.
   float twinkle = 1.0 - uTwinkle * 0.7 * (0.5 + 0.5 * sin(uTime * 9.0 + seed.w * 400.0));
-  float bright = (0.5 + 2.5 * exp(-r * 3.0)) * twinkle * (1.0 + lit * 2.0);
+  // Distance from the centre — not the spin axis, or a quasar's jets would
+  // all shine as bright as its core. Measured after the shocks, so the
+  // motes a shell shoves outward carry their colour with them.
+  float along = length(p) / uRadius;
+  float bright = (0.5 + 2.5 * exp(-along * 3.0)) * twinkle * (1.0 + lit * 2.0);
   // Spread a big close mote's light over its area, as defocus would.
   bright *= min(1.0, 9.0 / (px * px));
-  vec3 base = palette(r * 0.7 + seed.w * 0.12 + uHue);
+  // Colour by distance from the centre minus the phase, so bands of colour
+  // ripple outward through every shape.
+  vec3 base = palette(along * 1.3 - uHue + seed.w * 0.08 + lit * 0.3);
+  base *= 0.75 + uColor * 0.7;
   vColor = base * bright;
 }
 `;

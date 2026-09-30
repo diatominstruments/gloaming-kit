@@ -302,15 +302,18 @@ everything else; `'psychedelic'` cycles a full rainbow instead.
 
 `nebula` and `tesseract` look at an object rather than flying through a
 space, and take a `distance` option: `near`, `med` and `far` circle it at a
-fixed range, and `orbit` (default) flies a loop — hanging far back with the
-object small in frame, then diving in and sweeping it past the camera, off to
-one side and filling the frame, before climbing away again.
+fixed range, and `orbit` (default) flies a true elliptical orbit with the
+object at one focus — drifting along the far end with the object small in
+frame, accelerating as it falls in, whipping round the object at the closest
+point and climbing away out the other side, turning partway toward its
+heading so the object sweeps across the frame. The ellipse turns a little
+each loop, so passes come in from different directions.
 
 | id | what it does | falls back to |
 |----|--------------|---------------|
 | `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and kick the deformation; the `warp` input (bass by default — rebind it to tie the walls to another band) sets how deformed the walls are, mid how fast the deformation cycles, treble lights the haze. Options: `speed` (`slow`, `med`, `fast`), `deform` (`twist` wrings each cell, `ripple` makes walls flow like liquid, `breathe` opens and closes the holes at every scale until walls thin to lace), `deformAmount` (`off`, `low`, `med`, `high`). Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
 | `spectrum-terrain` | low flight along a valley made of the song's history: rows laid at the horizon from the live spectrum scroll toward the camera, treble rippling the floor and bass heaving the canyon walls, over noise ridges. Hits roll waves of light out to the horizon; the sky is left transparent for a background layer to fill | `road` |
-| `nebula` | a spiral galaxy of 150k motes (option `count`), watched from `distance`; motes swell and soften with nearness, so the close pass of `orbit` skims through blurred arms. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns the arms, treble sparkles | `particles` |
+| `nebula` | a cloud of 150k motes (option `count`), watched from `distance`; motes swell and soften with nearness, so the close pass of `orbit` skims through blurred structure. Option `shape`: `spiral` (default) and `barred` galaxies (with `arms`, 1–6), `ring` (a core inside a detached ring), `vortex` (a whirlpool spiralling down a funnel into a drain), `quasar` (a thin disc firing two corkscrewing jets from its poles), `shell` (a planetary nebula's hourglass lobes round a hot star). Bands of colour flow outward through it at a rate, and brightness, set by the `color` input — upper mids by default, rebindable to any band. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns it, treble sparkles | `particles` |
 | `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
 | `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell` (default), or `600-cell` (720 edges); and `distance` | `rolling-ball` |
 

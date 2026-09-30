@@ -29,42 +29,50 @@ const DISTANCES = { near: 0.6, med: 1, far: 1.6 };
 /**
  * Where the camera is relative to the object it watches, advanced each frame.
  *
- * At a fixed distance it circles slowly. On `orbit` it follows a looping
- * flight instead: it hangs back far off, then dives in, whips round the
- * object close enough that it fills the frame, and climbs away again. Going
- * faster round the object the closer it is — as anything in orbit does — is
- * what turns the close pass into a sweep rather than a slow zoom.
+ * At a fixed distance it circles slowly. On `orbit` it flies a true
+ * elliptical orbit with the object at one focus, moving as a planet does
+ * (Kepler's equation): it drifts slowly along the far end of the ellipse,
+ * accelerates as it falls in, whips round the object at the closest point
+ * and climbs away out the other side. The close pass is a fly-by that keeps
+ * going, not a dive that reverses back out the way it came — which is what
+ * varying only the distance gives, however it is eased. The ellipse's axis
+ * turns a little every loop, so passes come in from different directions.
  *
- * During the pass the camera also aims off to the side of the object rather
- * than at it, so the object sweeps across the frame instead of swelling
- * dead centre.
+ * During the pass, aim() turns the camera partway toward where it is
+ * heading, so the object sweeps across the frame rather than staying pinned
+ * to the centre while the background spins behind it.
  *
  *   const swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.4 });
- *   swoop.update(dt, rate);   // rate: radians/s round the object at distance 1
+ *   swoop.update(dt, rate);   // rate: radians/s round the object when circling
  *   swoop.scale      // distance, as a multiple of the visualization's own
  *   swoop.angle      // heading round the object
  *   swoop.close      // 0 far off → 1 at the closest point of the pass
- *   swoop.aside      // signed sideways aim, in object radii
+ *   swoop.aim(camera, target)
  */
 export class Swoop {
   /**
-   * `near` and `far` bound the orbit's distance multiplier; `period` is
-   * roughly how many seconds one swoop takes.
+   * `near` and `far` are the orbit's closest and farthest distance, as
+   * multiples of the visualization's own; `period` is seconds per loop.
    */
   constructor(mode, { near = 0.35, far = 2.4, period = 26 } = {}) {
     if (mode !== undefined && !DISTANCE_OPTION.values.includes(mode)) {
       console.warn(`GloamingKit: distance '${mode}'; expected ${DISTANCE_OPTION.values.join('|')}`);
     }
     this.mode = DISTANCE_OPTION.values.includes(mode) ? mode : DISTANCE_OPTION.default;
+    this.a = (far + near) / 2;                  // semi-major axis
+    this.e = (far - near) / (far + near);       // eccentricity
+    this.b = this.a * Math.sqrt(1 - this.e * this.e);
     this.near = near;
     this.far = far;
-    this.period = period;
-    // Start partway out, heading in, so the first pass comes early.
-    this.phase = Math.PI * 0.6;
+    this.n = (Math.PI * 2) / period;            // mean motion
+    // Eccentric anomaly: 0 at the closest point. Start on the way in, so the
+    // first pass comes early.
+    this.E = -2.2;
+    this.axis = Math.random() * Math.PI * 2;    // heading of the ellipse's axis
     this.angle = Math.random() * Math.PI * 2;
     this.scale = DISTANCES[this.mode] ?? 1;
     this.close = 0;
-    this.aside = 0;
+    this.last = null;                           // camera position last frame
   }
 
   update(dt, rate) {
@@ -72,28 +80,38 @@ export class Swoop {
       this.angle += dt * rate;
       return;
     }
-    this.phase += dt * (Math.PI * 2) / this.period;
-    // 0 at the closest point, 1 farthest; the power makes the camera linger
-    // far out and spend only a moment close in.
-    const out = Math.pow(0.5 - 0.5 * Math.cos(this.phase), 0.6);
-    this.scale = this.near + (this.far - this.near) * out;
-    this.close = 1 - out;
-    this.angle += dt * rate / this.scale;
-    this.aside = Math.pow(this.close, 1.5) * 0.9 * Math.sin(this.phase * 0.5 + 1);
+    // dE/dt = n·a/r is Kepler's equation differentiated: fast when close.
+    const r = this.a * (1 - this.e * Math.cos(this.E));
+    this.E += dt * this.n * (this.a / r);
+    this.axis += dt * rate * 0.3;
+    // Position relative to the focus, in the orbit's plane.
+    const x = this.a * (Math.cos(this.E) - this.e);
+    const y = this.b * Math.sin(this.E);
+    this.scale = Math.hypot(x, y);
+    this.angle = this.axis + Math.atan2(y, x);
+    this.close = (this.far - this.scale) / (this.far - this.near);
   }
 
   /**
-   * Point `camera` at `target` (a THREE.Vector3), offset sideways by `aside`
-   * × `radius` during a close pass.
+   * Point `camera` at `target` (a THREE.Vector3) — or, during a close pass,
+   * partway toward where the camera is heading. Call after positioning it.
    */
-  aim(camera, target, radius) {
-    if (!this.aside) {
+  aim(camera, target) {
+    const pos = camera.position;
+    const last = this.last;
+    this.last = pos.clone();
+    const lead = this.mode === 'orbit' ? 0.55 * this.close * this.close : 0;
+    if (!last || lead < 1e-3) {
       camera.lookAt(target);
       return;
     }
-    const f = camera.position.clone().sub(target).normalize();
-    const side = f.cross(camera.up).normalize().multiplyScalar(this.aside * radius);
-    camera.lookAt(target.clone().add(side));
+    const heading = pos.clone().sub(last);
+    if (heading.lengthSq() < 1e-12) {
+      camera.lookAt(target);
+      return;
+    }
+    const ahead = pos.clone().add(heading.normalize().multiplyScalar(pos.distanceTo(target)));
+    camera.lookAt(target.clone().lerp(ahead, lead));
   }
 }
 

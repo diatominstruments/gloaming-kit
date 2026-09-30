@@ -295,7 +295,7 @@ export class Tesseract extends ThreeVisualization {
     const dist = Tesseract.VIEW * scale;
     const cam = this.camera;
     cam.position.set(Math.cos(angle) * dist, Math.sin(this.time * 0.07) * 0.3 * dist, Math.sin(angle) * dist);
-    this.swoop.aim(cam, this.center, SCALE);
+    this.swoop.aim(cam, this.center);
     if (cam.aspect !== this.width / this.height) {
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();
