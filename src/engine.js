@@ -400,6 +400,7 @@ export { Visualization } from './visualizations/base.js';
 export { FeedbackVisualization } from './visualizations/feedback-base.js';
 export { ThreeVisualization, withThree } from './visualizations/three-base.js';
 export { flowRibbon } from './visualizations/flow-ribbon.js';
+export { Glyph, GLYPH_LEVELS } from './visualizations/glyph.js';
 export {
   register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES, LAYER, LAYERS,
 } from './visualizations/index.js';

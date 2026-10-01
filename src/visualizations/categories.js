@@ -14,6 +14,7 @@ export const CATEGORY = Object.freeze({
   CHAOS: 'chaos',
   ATTRACTORS: 'attractors',
   SPACES: 'spaces',
+  GLYPHS: 'glyphs',
   BACKGROUNDS: 'backgrounds',
   OVERLAYS: 'overlays',
   OTHER: 'other',
@@ -45,6 +46,11 @@ export const CATEGORIES = Object.freeze([
     id: CATEGORY.SPACES,
     label: 'Spaces',
     description: 'Native 3D worlds and volumes to fly through and look into. Need 3D; each falls back to a 2D cousin.',
+  },
+  {
+    id: CATEGORY.GLYPHS,
+    label: 'Glyphs',
+    description: 'Structures grown from a small drawing: each takes a `glyph` option, a grid of cells at a few strengths, and builds from it.',
   },
   {
     id: CATEGORY.BACKGROUNDS,

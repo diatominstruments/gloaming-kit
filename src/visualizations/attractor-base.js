@@ -92,6 +92,24 @@ export class AttractorBase extends Visualization {
 }
 
 /**
+ * How a point cloud turns. Each mode is a yaw/pitch path driven by one phase,
+ * which advances at the eased spin rate × the `speed` option:
+ *
+ *   tumble  (default) turns about two axes at incommensurate rates, so every
+ *           side comes round and the view never repeats
+ *   spin    turns about the vertical axis, with a gentle rocking tilt
+ *   rock    swings back and forth around face-on; the familiar flat figure
+ *           stays recognisable, its layers parting as it swings
+ *   off     face-on and flat: the original 2D figure
+ */
+const ROTATION = {
+  tumble: (phase) => [phase, phase * 0.61],
+  spin:   (phase) => [phase, Math.sin(phase * 0.43) * 0.45],
+  rock:   (phase) => [Math.sin(phase * 0.8) * 1.1, Math.sin(phase * 0.53) * 0.4],
+  off:    () => [0, 0],
+};
+
+/**
  * PointCloudAttractor — for 2D iterated maps (de Jong, Clifford, Bedhead…).
  * Each frame walks the orbit POINTS times from where the last frame stopped
  * and plots every visit, so the cloud is a density sketch of the attractor
@@ -100,6 +118,24 @@ export class AttractorBase extends Visualization {
  * Subclasses implement `step(x, y, p, out)`, writing the next point into
  * `out`. It runs thousands of times per frame, so it takes an out-parameter
  * and indexes `p` directly rather than returning or destructuring arrays.
+ *
+ * The maps are flat, so to turn them in 3D the third axis comes from the
+ * orbit's previous point (`depth()`, a delay coordinate): each point is
+ * lifted by where it came from. Face-on that is the familiar 2D figure;
+ * turned, the sheets the map folds on top of each other pull apart, and
+ * edge-on it is another attractor-like figure rather than a flat line, so
+ * the view can go all the way round. The view is computed here by advance()
+ * and shared with the 3D renderer (point-cloud-3d.js), so both turn alike.
+ *
+ * Options:
+ *
+ *   rotation  'tumble' | 'spin' | 'rock' | 'off'   see ROTATION above
+ *   speed     0–3, multiplier on how fast it turns (0 holds the current angle)
+ *
+ *   { id: 'clifford', options: { rotation: 'rock', speed: 0.5 } }
+ *
+ * The turn rate rides the `spin` slot (mid intensity by default), and bass
+ * hits whip it round faster for a moment and briefly swell the figure.
  *
  * The `accent` slot blends the cloud from lineColor toward accentColor. By
  * default it is an envelope on bass hits, so the figure flashes on each one
@@ -112,6 +148,12 @@ export class PointCloudAttractor extends AttractorBase {
   static inputs = {
     ...AttractorBase.inputs,
     accent: { kind: 'level', default: { trigger: TRIGGER.BASS, decay: 2.5 } },
+    spin:   { kind: 'level', default: { intensity: 'mid' } },
+  };
+
+  static options = {
+    rotation: { kind: 'enum', values: Object.keys(ROTATION), default: 'tumble' },
+    speed: { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
   };
 
   static POINTS = 3200;
@@ -119,11 +161,38 @@ export class PointCloudAttractor extends AttractorBase {
   static DOT = 1.4;
   static LIMIT = 1e3;   // orbit escape threshold; beyond this, reseed
 
+  static FOCAL = 7;           // camera distance in world units
+  static DEPTH = 1;           // multiplier on depth()
+  static SPIN = [0.35, 0.6];  // [idle, per unit of `spin`] turn rate, rad/s
+  static KICK_SPIN = 1.8;     // extra turn rate at full hit strength, rad/s
+  static PULSE = 0.15;        // swell at full hit strength
+  static KICK_DECAY = 3.2;
+
   constructor(opts) {
     super(opts);
     this.x = this.constructor.SEED[0];
     this.y = this.constructor.SEED[1];
+    this.px = this.x;
+    this.py = this.y;
     this.out = [0, 0];
+
+    const rotation = this.options.rotation ?? 'tumble';
+    if (!(rotation in ROTATION)) {
+      console.warn(`GloamingKit: '${this.constructor.id}' got rotation '${rotation}'; expected ${Object.keys(ROTATION).join('|')}`);
+    }
+    this.path = ROTATION[rotation] ?? ROTATION.tumble;
+    // Off is truly flat, so it draws exactly the original 2D figure.
+    this.lift = this.path === ROTATION.off ? 0 : this.constructor.DEPTH;
+    const speed = Number(this.options.speed ?? 1);
+    this.speed = Number.isFinite(speed) ? Math.max(0, speed) : 1;
+
+    this.phase = 0;   // starts face-on, then turns
+    this.spin = this.constructor.SPIN[0];
+    this.kick = 0;
+    // View for the current frame; see advance().
+    this.yaw = 0;
+    this.pitch = 0;
+    this.swell = 1;
   }
 
   step(x, y, p, out) {
@@ -131,20 +200,56 @@ export class PointCloudAttractor extends AttractorBase {
     out[1] = y;
   }
 
+  /**
+   * The lifted coordinate for a point at (x, y) reached from (px, py).
+   * Defaults to the previous y; a system can override it.
+   */
+  depth(px, py, x, y) {
+    return py;
+  }
+
   /** How far toward accentColor to draw, 0–1, from the `accent` slot. */
   accentMix() {
     return clamp01(this.in('accent'));
   }
 
-  draw(ctx, dt) {
-    const { POINTS, SCALE, SEED, DOT, LIMIT } = this.constructor;
+  onInput(slot, data) {
+    super.onInput(slot, data);
+    this.kick = Math.max(this.kick, impact(data));
+  }
+
+  /**
+   * Advance the parameters and the view by `dt`, setting `this.yaw`,
+   * `this.pitch` and `this.swell` for this frame.
+   */
+  advance(dt) {
+    const { SPIN, KICK_SPIN, PULSE, KICK_DECAY } = this.constructor;
     this.updateParams(dt);
+    this.kick *= Math.exp(-dt * KICK_DECAY);
+    // A rate, eased, so the view never jumps when the mix shifts; hits add a
+    // decaying whip of extra rate rather than a jump to a new angle.
+    this.spin = approach(this.spin, SPIN[0] + this.in('spin') * SPIN[1], 0.3, dt);
+    this.phase += (this.spin + this.kick * KICK_SPIN) * this.speed * dt;
+    [this.yaw, this.pitch] = this.path(this.phase);
+    this.swell = 1 + PULSE * this.kick;
+  }
+
+  draw(ctx, dt) {
+    const { POINTS, SCALE, SEED, DOT, LIMIT, FOCAL } = this.constructor;
+    this.advance(dt);
 
     const cx = this.width / 2;
     const cy = this.height / 2;
     const scale = Math.min(this.width, this.height) * SCALE;
     const p = this.params;
     const out = this.out;
+    const lift = this.lift;
+    const swell = this.swell;
+    const cosY = Math.cos(this.yaw);
+    const sinY = Math.sin(this.yaw);
+    const cosP = Math.cos(this.pitch);
+    const sinP = Math.sin(this.pitch);
+    const near = FOCAL * 0.1;
 
     this.applyStyle(ctx);
     ctx.shadowBlur = 0; // thousands of points — glow is unaffordable here
@@ -156,22 +261,38 @@ export class PointCloudAttractor extends AttractorBase {
 
     let x = this.x;
     let y = this.y;
+    let px = this.px;
+    let py = this.py;
     for (let i = 0; i < POINTS; i++) {
       this.step(x, y, p, out);
+      px = x;
+      py = y;
       x = out[0];
       y = out[1];
       // Written as a failed `<` so NaN trips it too: a jolt can push some
       // maps into a runaway region, and one Infinity poisons the orbit for
       // good. De Jong is bounded by construction; its siblings are not.
       if (!(Math.abs(x) < LIMIT && Math.abs(y) < LIMIT)) {
-        x = SEED[0];
-        y = SEED[1];
+        x = px = SEED[0];
+        y = py = SEED[1];
         continue;
       }
-      ctx.fillRect(cx + x * scale, cy + y * scale, DOT, DOT);
+      // The 3D renderer's transform: lift, swell, yaw, pitch, perspective.
+      const z = this.depth(px, py, x, y) * lift * swell;
+      const sx = x * swell;
+      const rx = sx * cosY - z * sinY;
+      const rz = sx * sinY + z * cosY;
+      const ry = y * swell * cosP - rz * sinP;
+      const d = FOCAL + y * swell * sinP + rz * cosP;
+      if (d <= near) continue;
+      const persp = lift ? FOCAL / d : 1;
+      const size = DOT * persp;
+      ctx.fillRect(cx + rx * scale * persp, cy + ry * scale * persp, size, size);
     }
     this.x = x;
     this.y = y;
+    this.px = px;
+    this.py = py;
     ctx.globalAlpha = baseAlpha;
   }
 }

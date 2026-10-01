@@ -69,6 +69,11 @@
     .tl-vizzes { display: flex; flex-wrap: wrap; gap: 4px 10px; }
     .tl-vizzes label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text); }
     .tl-remove { float: right; padding: 2px 8px; font-size: 12px; }
+    .glyph-label { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    .glyph-editor canvas { display: block; cursor: crosshair; touch-action: none; border-radius: 4px; }
+    .glyph-tools { display: flex; gap: 4px; margin-top: 4px; }
+    .glyph-tools button { padding: 2px 8px; font-size: 12px; }
+    .glyph-tools button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
     #song-name { color: var(--muted); font-size: 12px; word-break: break-all; }
     input[type="file"] { display: none; }
   </style>

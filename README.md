@@ -318,6 +318,21 @@ each loop, so passes come in from different directions.
 | `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
 | `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell` (default), or `600-cell` (720 edges); and `distance` | `rolling-ball` |
 
+**Glyphs** — structures grown from a small drawing the viewer makes. Each
+takes a `glyph` option, a coarse grid of cells at a few strengths; see
+[Glyphs](#glyphs) for the format and for building an editor. The 3D ones
+take a `palette` option like the Spaces, and fall back to `glyph-mosaic`
+showing the same drawing.
+
+| id | what it does |
+|----|--------------|
+| `glyph-mosaic` | the drawing made of small copies of itself, each turning on its own phase so the mosaic ripples; hits swell and flash the copies. 2D, and what the others draw when 3D is off |
+| `glyph-fractal` | the drawing made of copies of itself all the way down — each filled cell is a map that shrinks the whole figure into it, played as a chaos game, so a plus gives a Vicsek fractal and a ring of eight a Sierpiński carpet. Option `form`: `bloom` (default) tilts the copies out of the plane like petals, black one way and grey the other, as a point cloud; `sponge` keeps the cubes whose three shadows all land on filled cells (a ring of eight gives the Menger sponge) and draws them as lit cubes nested two or three levels deep. The `fold` input (bass) sets the tilt, `spin` the copies' twist, and hits swell them. Option `distance` as `nebula` |
+| `glyph-automaton` | the drawing as the first generation of a cellular automaton, each generation a slice of lit cubes stacked into a tower that sinks as new ones land on top — gliders leave diagonal tubes, oscillators pillars. Bass hits step a generation and light that slice for good, so the tower's sides record where the beats fell; snare hits plant the drawing again; it replants itself when the pattern dies or repeats. Option `rule`: `brain` (default; Brian's Brain), `life`, `star-wars` — black cells start alive and grey ones dying. Option `distance` |
+| `glyph-tunnel` | flight down a tunnel built from the drawing: black cells are lit stone, grey ones panes of translucent light, repeated `repeat` times round it with every other copy mirrored. Option `wrap`: `wall` (default) carves it in relief on the wall, rows running down the tunnel; `section` makes every ring the whole drawing bent into an annulus, twisting into a spiral. Hits send swells down it |
+| `glyph-city` | flight between two endless cities planned from the drawing — filled cells are towers, black tall and grey low, the plan tiled to the horizon and hung upside down overhead. Each column is a band of the spectrum, so every street rises and falls with its part of the mix. Edges and streets glow; hits roll light down the streets. Option `twist` (`off`, `low`, `med`, `high`) corkscrews the two cities round each other ahead; `speed`. Ray-marched in the background layer at half resolution |
+| `glyph-flow` | a stream of light parting round the drawing as an obstacle, so it shows as a hole outlined in fire; streaks that skim it carry the accent colour downstream, tracing it in their wakes, and each cell swirls the stream (black one way, grey the other). Hits inflate the obstacle so the stream bursts outward. Options `distance` (`near`, `med`, `far`) and `count` |
+
 **Backgrounds** — full-screen fields that draw in the background layer (see
 [Layers](#layers)), so they sit behind anything else in the window whatever
 order they came on in. Pair one with a figure from above.
@@ -410,6 +425,12 @@ intensity plus 0.25 relative.
 | `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
+| `glyph-mosaic` | `pulse` ← bass | `spin` ← int mid, `glow` ← mix treble |
+| `glyph-fractal` | `jolt` ← bass | `fold` ← 0.5 int bass + 0.5 rel bass, `spin` ← int mid, `glow` ← mix treble |
+| `glyph-automaton` | `step` ← bass, `stamp` ← snare | `rate` ← int mid, `glow` ← mix treble |
+| `glyph-tunnel` | `ripple` ← bass | `spin` ← int mid, `glow` ← mix treble |
+| `glyph-city` | `pulse` ← bass | `twist` ← int mid, `shimmer` ← mix treble, `travel` ← int rms (smoothed 2 s) |
+| `glyph-flow` | `surge` ← bass | `flow` ← int rms (smoothed), `swirl` ← int mid, `glow` ← mix treble |
 | `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
 | `infinity-mirror` | `flip` ← snare | `reveal` ← rel bass (fast rise, slow fall), `turn` ← mid |
 | `kaleidoscope` | `shift` ← snare | `reveal` ← int rms, `spin` ← mid |
@@ -440,9 +461,10 @@ at two different distances.
 
 A visualization declares the options it reads in `static options`, so editors
 can offer them. Each is an object with a `kind` and a `default`: `'enum'`
-(with `values`), `'string'` (optional `maxLength`) or `'number'` (optional
-`min`, `max`, `step`). A bare array is shorthand for an enum with no declared
-default:
+(with `values`), `'string'` (optional `maxLength`), `'number'` (optional
+`min`, `max`, `step`) or `'grid'` (a drawing; `width`, `height` and `levels`
+— see [Glyphs](#glyphs)). A bare array is shorthand for an enum with no
+declared default:
 
 ```js
 static options = {
@@ -488,6 +510,63 @@ sits as a fraction of the focal length, and it doubles as the cap on how much
 the projection can magnify anything — on Thomas at `near`, over a full
 revolution, the longest segment drawn goes from 3.1× the canvas diagonal at
 `NEAR = 0.06` to 0.4× at 0.35. At `med` and `far` nothing is ever clipped.
+
+## Glyphs
+
+The Glyphs visualizations build their structure from a drawing: a coarse grid
+of cells, each empty or filled at one of a few strengths. The idea is that a
+client gives the viewer a small canvas to click on — once for grey, again for
+black — and passes the result in as an option:
+
+```js
+{ id: VIZ.GLYPH_FRACTAL, options: { glyph: [
+  '2..1..2',
+  '.2.1.2.',
+  '..222..',
+  '1122211',
+  '..222..',
+  '.2.1.2.',
+  '2..1..2',
+] } }
+```
+
+One string per row, top row first, one character per cell: a digit is that
+strength, `.` or a space is empty, and any other character (`#`, `x`…) is
+full strength, so ASCII art works too. Rows may also be arrays of numbers,
+for a client that keeps a matrix. It is plain JSON like any other option, so
+a drawing saved with a timeline comes back with it.
+
+`describe()` reports the option as `kind: 'grid'`, with the canvas an editor
+should offer:
+
+```js
+{ name: 'glyph', kind: 'grid', width: 7, height: 7, levels: 2, default: [ /* rows */ ] }
+```
+
+`levels` is the number of strengths above empty (2: grey and black). The size
+is a suggestion — each visualization fits whatever drawing it is given, up
+to 32 cells a side — and an empty or unreadable drawing falls back to the
+visualization's own default, so there is always something on screen.
+
+The demo's timeline editor shows a grid editor under any checked
+visualization with a `grid` option: click to step a cell's strength, drag to
+paint, shift- or right-click to erase, with left–right and top–bottom
+mirroring (any scribble mirrored both ways looks intentional). It hands the
+drawing over on release rather than per cell, since a changed option is a new
+instance and crossfades in. The library exports `Glyph` for clients that want
+to read or normalize drawings the same way the visualizations do:
+
+```js
+const g = Glyph.parse(rows, levels);   // null if it isn't a grid
+g.width; g.height; g.get(x, y);         // strength 0–levels, 0 outside
+g.filled();                             // [{ x, y, level, weight }, …]
+g.toRows();                             // back to strings
+```
+
+To write one, declare the option with `glyphOption()` and read it with
+`readGlyph(this)`, both in
+[src/visualizations/glyph.js](src/visualizations/glyph.js); that file also
+holds every built-in default drawing.
 
 ## Layers
 

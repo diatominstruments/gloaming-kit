@@ -43,6 +43,9 @@ export { approach, clamp01, impact } from '../util.js';
  *     threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
  *   };
  *
+ * A fourth kind, 'grid', is a drawing for an editor to offer as a canvas of
+ * cells; see glyph.js.
+ *
  * Descriptive metadata, all optional, for pickers and editors (see describe()
  * and catalog() in index.js, which read it):
  *

@@ -5,7 +5,7 @@
  * the library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { GloamingKit, catalog, VIZ } = gloamingKit;
+  const { GloamingKit, catalog, VIZ, Glyph } = gloamingKit;
 
   const canvas = document.getElementById('stage');
 
@@ -136,6 +136,144 @@
     viz.setTimeline(windows);
   }
 
+  // ---- glyph editor --------------------------------------------------------
+
+  // Shared by every editor, so mirroring stays on while moving between them.
+  const mirror = { h: false, v: false };
+
+  /**
+   * A click-to-draw grid for a `kind: 'grid'` option. Clicking a cell steps
+   * it up a strength (grey, then full, then empty again); dragging paints
+   * the strength the first cell got; shift- or right-click erases. Mirroring
+   * paints the reflected cells too. The finished drawing is handed to
+   * `onChange` as rows on release — not per cell, since each change makes a
+   * new instance and crossfades to it.
+   */
+  function glyphEditor(spec, value, onChange) {
+    const { width, height, levels } = spec;
+    const cells = new Uint8Array(width * height);
+    const load = (rows) => {
+      cells.fill(0);
+      const g = Glyph.parse(rows, levels);
+      if (!g) return;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) cells[y * width + x] = g.get(x, y);
+      }
+    };
+    load(value ?? spec.default);
+
+    const root = document.createElement('div');
+    root.className = 'glyph-editor';
+    const px = Math.floor(240 / Math.max(width, height));
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = document.createElement('canvas');
+    canvas.style.width = `${width * px}px`;
+    canvas.style.height = `${height * px}px`;
+    canvas.width = width * px * dpr;
+    canvas.height = height * px * dpr;
+    const g2 = canvas.getContext('2d');
+    g2.scale(dpr, dpr);
+
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7fffd4';
+    const draw = () => {
+      g2.fillStyle = '#10101a';
+      g2.fillRect(0, 0, width * px, height * px);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const level = cells[y * width + x];
+          g2.globalAlpha = level ? 0.25 + 0.75 * (level / levels) : 1;
+          g2.fillStyle = level ? accent : '#1a1a26';
+          g2.fillRect(x * px + 1, y * px + 1, px - 2, px - 2);
+        }
+      }
+      g2.globalAlpha = 1;
+    };
+
+    const set = (x, y, level) => {
+      const xs = mirror.h ? [x, width - 1 - x] : [x];
+      const ys = mirror.v ? [y, height - 1 - y] : [y];
+      for (const cx of xs) for (const cy of ys) cells[cy * width + cx] = level;
+    };
+    const rows = () => Array.from({ length: height }, (_, y) => Array.from(
+      cells.subarray(y * width, (y + 1) * width), (c) => (c ? String(c) : '.'),
+    ).join(''));
+    const commit = () => onChange(rows());
+
+    let paint = null;
+    const cellAt = (e) => {
+      const r = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / px);
+      const y = Math.floor((e.clientY - r.top) / px);
+      return x >= 0 && y >= 0 && x < width && y < height ? [x, y] : null;
+    };
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('pointerdown', (e) => {
+      const at = cellAt(e);
+      if (!at) return;
+      canvas.setPointerCapture(e.pointerId);
+      const [x, y] = at;
+      paint = e.button === 2 || e.shiftKey ? 0 : (cells[y * width + x] + 1) % (levels + 1);
+      set(x, y, paint);
+      draw();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (paint === null) return;
+      const at = cellAt(e);
+      if (!at) return;
+      set(at[0], at[1], paint);
+      draw();
+    });
+    const release = () => {
+      if (paint === null) return;
+      paint = null;
+      commit();
+    };
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+
+    const tools = document.createElement('div');
+    tools.className = 'glyph-tools';
+    const tool = (label, title, onClick) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', () => onClick(b));
+      tools.appendChild(b);
+      return b;
+    };
+    for (const [axis, label, title] of [['h', '⇆', 'Mirror left–right'], ['v', '⇅', 'Mirror top–bottom']]) {
+      const b = tool(label, title, () => {
+        mirror[axis] = !mirror[axis];
+        b.setAttribute('aria-pressed', mirror[axis]);
+      });
+      b.setAttribute('aria-pressed', mirror[axis]);
+    }
+    tool('Clear', 'Empty every cell', () => { cells.fill(0); draw(); commit(); });
+    tool('Reset', 'Back to the default drawing', () => { load(spec.default); draw(); commit(); });
+
+    draw();
+    root.append(canvas, tools);
+    return root;
+  }
+
+  /** Grid editors for the checked visualizations of one group, in one window. */
+  function renderEditors(container, w, group) {
+    container.innerHTML = '';
+    for (const d of group.visualizations) {
+      const entry = w.visualizations.find((e) => e.id === d.id);
+      if (!entry) continue;
+      for (const spec of d.options.filter((o) => o.kind === 'grid')) {
+        const label = document.createElement('div');
+        label.className = 'glyph-label';
+        label.textContent = `${d.label} — ${spec.name}`;
+        container.append(label, glyphEditor(spec, entry.options?.[spec.name], (rows) => {
+          entry.options = { ...entry.options, [spec.name]: rows };
+          apply();
+        }));
+      }
+    }
+  }
+
   function renderTimeline() {
     timelineEl.innerHTML = '';
     windows.forEach((w, i) => {
@@ -178,6 +316,7 @@
         heading.title = group.description;
         const vizzes = document.createElement('div');
         vizzes.className = 'tl-vizzes';
+        const editors = document.createElement('div');
         for (const { id, label: name, description } of group.visualizations) {
           const label = document.createElement('label');
           label.title = description;
@@ -191,11 +330,13 @@
               ? [...w.visualizations, { id, bind: null }]
               : w.visualizations.filter((e) => e.id !== id);
             apply();
+            renderEditors(editors, w, group);
           });
           label.append(cb, name);
           vizzes.appendChild(label);
         }
-        section.append(heading, vizzes);
+        renderEditors(editors, w, group);
+        section.append(heading, vizzes, editors);
         div.appendChild(section);
       }
       timelineEl.appendChild(div);

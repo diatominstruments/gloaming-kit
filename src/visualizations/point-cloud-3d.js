@@ -1,5 +1,4 @@
 import { withThree } from './three-base.js';
-import { approach, impact } from './base.js';
 
 /**
  * pointCloud3D — the 3D renderer for a PointCloudAttractor subclass.
@@ -7,20 +6,10 @@ import { approach, impact } from './base.js';
  *   export class DeJong3D extends pointCloud3D(DeJong) { static id = 'attractor-3d'; … }
  *
  * Like flowRibbon, the result *is* the 2D class — same map, parameters,
- * drift and jolts — with draw() replaced and a rotating camera added.
- *
- * The maps are two-dimensional, so the third axis has to come from somewhere.
- * It is the orbit's previous point (`depth()`, a delay coordinate): each
- * plotted point is lifted by where it came from. Seen head-on that changes
- * nothing — the figure is exactly the 2D one — but turned, the sheets the
- * map folds on top of each other pull apart, and edge-on the cloud is
- * another attractor-like figure in its own right. So the view can spin all
- * the way round without ever collapsing to a flat line.
- *
- * Motion follows FlowAttractor's: a slow yaw whose rate rides the `spin`
- * slot, a pitch that rocks with the parameter drift, and on hits a decaying
- * whip of extra yaw plus a brief swell. The parameter jolts still morph the
- * figure as in 2D.
+ * lift into depth, rotation options and PointCloudAttractor.advance() — with
+ * only draw() replaced, so the two turn identically. What the GPU adds:
+ * points size and dim with depth, the near side leans toward the accent
+ * colour, and many more of them.
  *
  * Because points are cheap on the GPU, the cloud keeps the last CLOUD points
  * rather than only this frame's, iterating PER_FRAME each frame; older points
@@ -29,36 +18,19 @@ import { approach, impact } from './base.js';
 export const pointCloud3D = (Base) => class extends withThree(Base) {
   static fallback = Base;
 
-  static inputs = {
-    ...Base.inputs,
-    spin: { kind: 'level', default: { intensity: 'mid' } },
-  };
-
   static PER_FRAME = 12000;   // orbit iterations per frame
   static CLOUD = 60000;       // points retained; ~5 frames of history
-  static FOCAL = 7;           // camera distance in world units
-  static DEPTH = 1;           // multiplier on depth(); 0 is the flat 2D figure
   static SIZE = 1.6;          // point diameter in CSS px at the figure's centre
   static POINT_ALPHA = 0.55;  // per-point alpha before additive blending
   static DEPTH_FADE = 0.6;    // as flowRibbon: how much the far side dims
-  static SPIN = [0.15, 0.45]; // [idle, per unit of `spin`] yaw rate, rad/s
-  static TILT = 0.45;         // pitch rocking amplitude, radians
-  static KICK_SPIN = 1.8;
-  static PULSE = 0.15;
-  static KICK_DECAY = 3.2;
 
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
     const { CLOUD, DEPTH_FADE, POINT_ALPHA } = this.constructor;
 
-    this.yaw = 0;   // starts face-on: the familiar 2D figure, then it turns
-    this.spin = this.constructor.SPIN[0];
-    this.kick = 0;
     this.write = 0;   // next ring-buffer slot
     this.filled = 0;
-    this.px = this.x;
-    this.py = this.y;
 
     this.cloud = new Float32Array(CLOUD * 3);
     this.attribute = new THREE.BufferAttribute(this.cloud, 3).setUsage(THREE.DynamicDrawUsage);
@@ -99,22 +71,9 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
     this.scene.add(points);
   }
 
-  /**
-   * The lifted coordinate for a point at (x, y) reached from (px, py).
-   * Defaults to the previous y; a system can override it.
-   */
-  depth(px, py, x, y) {
-    return py;
-  }
-
-  onInput(slot, data) {
-    super.onInput(slot, data);
-    this.kick = Math.max(this.kick, impact(data));
-  }
-
   /** Run the map PER_FRAME times into the ring buffer. */
   iterate() {
-    const { PER_FRAME, CLOUD, SEED, LIMIT, DEPTH } = this.constructor;
+    const { PER_FRAME, CLOUD, SEED, LIMIT } = this.constructor;
     const p = this.params;
     const out = this.out;
     const cloud = this.cloud;
@@ -138,7 +97,7 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
       const j = w * 3;
       cloud[j] = x;
       cloud[j + 1] = y;
-      cloud[j + 2] = this.depth(px, py, x, y) * DEPTH;
+      cloud[j + 2] = this.depth(px, py, x, y) * this.lift;
       w = (w + 1) % CLOUD;
     }
     this.filled = Math.min(CLOUD, this.filled + PER_FRAME);
@@ -151,18 +110,11 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
   }
 
   draw(ctx, dt) {
-    const { SCALE, FOCAL, SIZE, SPIN, TILT, KICK_SPIN, PULSE, KICK_DECAY } = this.constructor;
+    const { SCALE, FOCAL, SIZE } = this.constructor;
     const { width: w, height: h } = this;
-    this.updateParams(dt);
+    this.advance(dt);
     if (!w || !h) return;
     this.iterate();
-
-    this.kick *= Math.exp(-dt * KICK_DECAY);
-    this.spin = approach(this.spin, SPIN[0] + this.in('spin') * SPIN[1], 0.3, dt);
-    this.yaw += (this.spin + this.kick * KICK_SPIN) * dt;
-    // Rides `this.t`, which advances with the drift, so a busy passage tumbles
-    // the figure as well as morphing it.
-    const pitch = Math.sin(this.t * 0.37) * TILT;
 
     // Same fov derivation as flowRibbon, so face-on the figure is the size
     // SCALE gives it in 2D.
@@ -179,8 +131,8 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
 
     const u = this.uniforms;
     u.uYaw.value.set(Math.cos(this.yaw), Math.sin(this.yaw));
-    u.uPitch.value.set(Math.cos(pitch), Math.sin(pitch));
-    u.uSwell.value = 1 + PULSE * this.kick;
+    u.uPitch.value.set(Math.cos(this.pitch), Math.sin(this.pitch));
+    u.uSwell.value = this.swell;
     u.uSize.value = SIZE * this.pixelScale();
     u.uHead.value = this.write;
     u.uCount.value = this.filled;
