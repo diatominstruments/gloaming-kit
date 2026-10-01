@@ -68,7 +68,7 @@ export class GlyphCity extends ThreeVisualization {
     palette: PALETTE_OPTION,
   };
   // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options.glyph);
+  static fallback = mosaicOf(this.options);
 
   static RESOLUTION = 0.5;
 

@@ -8,43 +8,54 @@ import {
 } from './three-shared.js';
 import { mosaicOf } from './glyph-mosaic.js';
 import { Glyph, glyphOption, readGlyph, FLOWER } from './glyph.js';
+import { interpret, interpretOption } from './glyph-interpret.js';
+import { Evolver, evolveOption } from './glyph-evolve.js';
 
 const TABLE = 4096;   // resolution of the map-picking table
 
 /**
- * GlyphFractal — the drawing made of copies of itself, all the way down.
+ * GlyphFractal — a fractal grown from the drawing, made of copies of itself
+ * all the way down.
  *
- * Every filled cell is a map that shrinks the whole figure into that cell.
- * Iterating them in random order (the chaos game) draws the one figure that
- * is made of copies of itself in exactly the drawn arrangement: draw a plus
- * and it is a Vicsek fractal, a ring of eight cells and it is a Sierpiński
- * carpet, anything else and it is a fractal nobody has named. It is rebuilt
- * every frame, so as the maps move the whole figure moves with them at
- * every scale.
+ * The drawing is first read into a handful of elements (option `interpret`;
+ * see glyph-interpret.js): strung along its smoothed outline, merged into
+ * blobs, or wrapped into a rosette. Each element then becomes a map that
+ * shrinks the whole figure into it — moved, turned and stretched to match —
+ * and iterating the maps in random order (the chaos game) draws the one
+ * figure made of copies of itself in that arrangement. Copies strung along a
+ * curve curl into dragon-like filaments; a few stretched blobs grow fronds;
+ * a rosette grows snowflakes. It is rebuilt every frame, so as the maps
+ * move the whole figure moves with them at every scale.
+ *
+ * Option `evolve` keeps the structure itself alive rather than fixed (see
+ * glyph-evolve.js): `drift` (default) lets every copy wander, turn and
+ * stretch on its own slow path, with hits jolting a few into new shapes;
+ * `grow` assembles the figure copy by copy along the reading, the oldest
+ * withering as new ones sprout and every regrowth a mutation; `morph` flows
+ * between the three readings in turn; `still` holds the reading. The
+ * `mutate` input (mid by default) sets how fast.
  *
  * Option `form` sets how it stands up in 3D:
  *
- *   bloom   (default) the copies tilt out of the plane about the axis
- *           across their direction from the centre, like petals; black
- *           cells tilt one way and grey the other, so the figure opens into
- *           a layered flower, and every copy of a copy does the same
- *   sponge  the drawing is read three ways at once — a cube is kept where
- *           all three of its axis-aligned shadows land on filled cells —
- *           so a ring of eight gives the Menger sponge and other drawings
- *           give solids with the drawing for a silhouette from every side.
- *           Drawn as lit cubes, the drawing nested two or three levels deep
- *           (as many as CUBES allows), each copy twisting about its own
- *           centre in a checkerboard of opposing turns. A drawing too sparse
- *           to keep two cubes this way blooms instead
+ *   bloom   (default) a point cloud whose copies tilt out of the plane
+ *           about the axis across their direction from the centre, like
+ *           petals; mostly-black elements tilt one way and mostly-grey ones
+ *           the other, so the figure opens into a layered flower, and every
+ *           copy of a copy does the same
+ *   solid   the elements revolved round the vertical axis into three
+ *           planes, so the figure is a 3D crystal; drawn as lit, stretched
+ *           cubes nested two or three levels deep (as many as CUBES allows)
  *
- * Grey cells are smaller, and copies reached through them are dimmer, so
- * they read as fainter parts of the drawing at every scale.
+ * Elements drawn mostly in grey make dimmer copies, so they read as fainter
+ * parts of the figure at every scale.
  *
  * Reactions:
  *
- *   jolt   a hit swells every copy past its cell, so the figure blooms
- *          into overlapping light, and kicks the fold
- *   fold   how far the copies tilt (bloom) or turn (sponge)
+ *   jolt   a hit swells every copy, so the figure blooms into overlapping
+ *          light, kicks the fold, and drives the evolution (a mutation, a
+ *          sprout, or a hurried morph)
+ *   mutate how fast the structure evolves
+ *   fold   how far the copies tilt
  *   spin   how fast the copies twist about their own centres
  *   glow   brightness
  *
@@ -64,6 +75,8 @@ export class GlyphFractal extends ThreeVisualization {
       smooth: 0.2,
     } },
     spin: { kind: 'level', default: { intensity: 'mid', smooth: 0.6 } },
+    // How fast the structure evolves (see the `evolve` option).
+    mutate: { kind: 'level', default: { intensity: 'mid', smooth: 1 } },
     glow: { kind: 'level', default: {
       sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],
       smooth: 0.1,
@@ -72,22 +85,23 @@ export class GlyphFractal extends ThreeVisualization {
 
   static options = {
     glyph: glyphOption({ width: 7, height: 7, value: FLOWER }),
-    form: { kind: 'enum', values: ['bloom', 'sponge'], default: 'bloom' },
+    interpret: interpretOption('contour'),
+    evolve: evolveOption('drift'),
+    form: { kind: 'enum', values: ['bloom', 'solid'], default: 'bloom' },
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
   };
   // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options.glyph);
+  static fallback = mosaicOf(this.options);
 
-  static CUBES = 12000;       // most cubes the sponge may nest into
+  static CUBES = 12000;       // most cubes the solid may nest into
+  static REVOLVE = 3;         // solid: planes the elements are revolved into
   static PER_FRAME = 80000;   // bloom: chaos-game iterations per frame
   // Points kept: two frames. More history smears the finest copies as the
   // maps move, and fine copies are the point.
   static CLOUD = 160000;
-  static GAP = 0.86;          // copy size as a fraction of its cell
-  static GREY = 0.72;         // grey copies' size, relative to black ones
-  // Added copy size at full hit strength. Kept under the gap: copies that
-  // overlap fill each other in, and the bass is rarely fully at rest.
+  // Added copy size at full hit strength. Small: copies that overlap fill
+  // each other in, and the bass is rarely fully at rest.
   static SWELL = 0.12;
   // Tilt, rad: [idle, added at full fold]. Small, because it compounds: a
   // copy of a copy tilts by its own lean on top of its parent's, so past
@@ -105,22 +119,30 @@ export class GlyphFractal extends ThreeVisualization {
     const { CLOUD } = GlyphFractal;
     this.psychedelic = isPsychedelic(this);
     this.glyph = readGlyph(this);
-    // One cell is one map, whose fractal is a single point.
-    if (this.glyph.count < 2) this.glyph = Glyph.parse(GlyphFractal.options.glyph.default);
 
     const form = this.options.form ?? 'bloom';
-    if (form !== 'bloom' && form !== 'sponge') {
-      console.warn(`GloamingKit: glyph-fractal form '${form}'; expected bloom|sponge`);
+    if (form !== 'bloom' && form !== 'solid') {
+      console.warn(`GloamingKit: glyph-fractal form '${form}'; expected bloom|solid`);
     }
-    this.maps = form === 'sponge' ? this.spongeMaps() : null;
-    if (!this.maps || this.maps.length < 2) this.maps = this.bloomMaps();
-    this.sponge = this.maps.sponge === true;
+    this.solid = form === 'solid';
+    const spec = GlyphFractal.options;
+    let reading = this.options.interpret ?? spec.interpret.default;
+    // One element is one map, whose fractal is a single point: read the
+    // default drawing instead.
+    if (interpret(this.glyph, reading, spec.interpret.default).length < 2) {
+      this.glyph = Glyph.parse(spec.glyph.default);
+      reading = spec.interpret.default;
+    }
+    this.evolver = new Evolver(this.glyph, reading, this.options.evolve ?? spec.evolve.default);
+    this.maps = this.createMaps(this.evolver.count);
+    this.scratch = [new Float64Array(9), new Float64Array(9), new Float64Array(9)];
 
     const n = this.maps.length;
     this.matrices = new Float32Array(n * 12);
-    this.hues = Float32Array.from(this.maps, (m, i) => m.hue ?? i / n);
-    this.dims = Float32Array.from(this.maps, (m) => m.dim);
-    if (this.sponge) this.buildCubes();
+    this.hues = new Float32Array(n);
+    this.dims = new Float32Array(n);
+    this.placeMaps();
+    if (this.solid) this.buildCubes();
     else this.buildPoints();
 
     this.phase = Math.random() * 10;
@@ -134,22 +156,15 @@ export class GlyphFractal extends ThreeVisualization {
     this.camera.near = 0.01;
     this.camera.far = 100;
     this.center = new THREE.Vector3();
+    this.mean = new THREE.Vector3();   // the figure's centre this frame
   }
 
   /** Bloom: a chaos-game point cloud. */
   buildPoints() {
     const THREE = this.THREE;
     const { CLOUD } = GlyphFractal;
-    // Pick maps in proportion to their area, so every copy fills in at the
-    // same density whatever its size.
-    const n = this.maps.length;
-    const weights = this.maps.map((m) => m.size ** 2);
-    const total = weights.reduce((a, b) => a + b, 0);
     this.table = new Uint16Array(TABLE);
-    for (let i = 0, k = 0, acc = 0; i < n; i++) {
-      acc += weights[i] / total;
-      for (; k < Math.round(acc * TABLE) && k < TABLE; k++) this.table[k] = i;
-    }
+    this.reweigh();
 
     this.cloud = new Float32Array(CLOUD * 3);
     this.tones = new Float32Array(CLOUD * 2);   // (hue, brightness) per point
@@ -194,10 +209,9 @@ export class GlyphFractal extends ThreeVisualization {
   }
 
   /**
-   * Sponge: lit cubes, the drawing nested as many levels deep as CUBES
-   * allows. A solid fractal is nearly a volume — a 7×7 drawing can keep
-   * eighty copies, a dimension over 2 — so as points it would only ever be
-   * fog; surfaces and shading are what make it read.
+   * Solid: lit cubes, the maps nested as many levels deep as CUBES allows.
+   * Revolved into 3D the figure is nearly a volume, so as points it would
+   * only ever be fog; surfaces and shading are what make it read.
    */
   buildCubes() {
     const THREE = this.THREE;
@@ -214,21 +228,11 @@ export class GlyphFractal extends ThreeVisualization {
     this.cubes = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), material, count);
     this.cubes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.cubes.frustumCulled = false;
-    // Address colour: the outermost copy picks the hue, each level within
-    // shifts it by a quarter as much, as the point cloud's colours do.
-    this.address = new Float32Array(count * 2);   // (hue, brightness)
-    for (let i = 0; i < count; i++) {
-      let hue = 0;
-      let bright = 1;
-      for (let d = 0, rest = i; d < this.depth; d++) {
-        const k = Math.floor(rest / n ** (this.depth - 1 - d));
-        rest -= k * n ** (this.depth - 1 - d);
-        hue += this.hues[k] * 0.25 ** d;
-        bright *= 0.4 + 0.6 * this.dims[k];
-      }
-      this.address[i * 2] = hue;
-      this.address[i * 2 + 1] = bright;
-    }
+    // Address colour, composed alongside the transforms: the outermost copy
+    // picks the hue, each level within shifts it by a quarter as much, as
+    // the point cloud's colours do. (hue, brightness) per nest.
+    this.nestTones = Array.from({ length: this.depth + 1 }, (_, d) => new Float32Array((n ** d) * 2));
+    this.nestTones[0].set([0, 1]);
     this.cubes.setColorAt(0, new THREE.Color(1, 1, 1));
     this.cubes.instanceColor.setUsage(THREE.DynamicDrawUsage);
     this.scene.add(this.cubes);
@@ -249,6 +253,9 @@ export class GlyphFractal extends ThreeVisualization {
     for (let d = 1; d <= this.depth; d++) {
       const parent = this.nests[d - 1];
       const out = this.nests[d];
+      const parentTone = this.nestTones[d - 1];
+      const outTone = this.nestTones[d];
+      const hueScale = 0.25 ** (d - 1);
       const parents = n ** (d - 1);
       // Address (a, b) is parent a applied after map b: P ∘ M.
       for (let a = 0; a < parents; a++) {
@@ -259,6 +266,8 @@ export class GlyphFractal extends ThreeVisualization {
         for (let b = 0; b < n; b++) {
           const q = b * 12;
           const o = (a * n + b) * 12;
+          outTone[(a * n + b) * 2] = parentTone[a * 2] + this.hues[b] * hueScale;
+          outTone[(a * n + b) * 2 + 1] = parentTone[a * 2 + 1] * (0.4 + 0.6 * this.dims[b]);
           for (let r = 0; r < 3; r++) {
             const r0 = r === 0 ? p00 : r === 1 ? p10 : p20;
             const r1 = r === 0 ? p01 : r === 1 ? p11 : p21;
@@ -273,6 +282,8 @@ export class GlyphFractal extends ThreeVisualization {
     }
     // Into three's column-major 4×4s.
     const leaf = this.nests[this.depth];
+    const tone = this.nestTones[this.depth];
+    let mx = 0, my = 0, mz = 0, mass = 0;
     const e = this.cubes.instanceMatrix.array;
     const count = n ** this.depth;
     for (let i = 0; i < count; i++) {
@@ -282,154 +293,149 @@ export class GlyphFractal extends ThreeVisualization {
       e[t + 4] = leaf[s + 1]; e[t + 5] = leaf[s + 4]; e[t + 6] = leaf[s + 7]; e[t + 7] = 0;
       e[t + 8] = leaf[s + 2]; e[t + 9] = leaf[s + 5]; e[t + 10] = leaf[s + 8]; e[t + 11] = 0;
       e[t + 12] = leaf[s + 9]; e[t + 13] = leaf[s + 10]; e[t + 14] = leaf[s + 11]; e[t + 15] = 1;
-      paletteColor(this, this.address[i * 2] * 0.5 + this.colorPhase, this.c);
-      this.cubes.setColorAt(i, this.c.multiplyScalar(this.address[i * 2 + 1]));
+      // Weighted by size, so absent (zero-size) cubes don't pull the centre.
+      const size = Math.abs(leaf[s] * leaf[s + 4]);
+      mx += leaf[s + 9] * size;
+      my += leaf[s + 10] * size;
+      mz += leaf[s + 11] * size;
+      mass += size;
+      paletteColor(this, tone[i * 2] * 0.5 + this.colorPhase, this.c);
+      this.cubes.setColorAt(i, this.c.multiplyScalar(tone[i * 2 + 1]));
     }
+    if (mass > 0) this.mean.set(mx / mass, my / mass, mz / mass);
     this.cubes.instanceMatrix.needsUpdate = true;
     this.cubes.instanceColor.needsUpdate = true;
   }
 
-  /** Cell (x, y) of the glyph → centre in [-1, 1], y up. */
-  cellCenter(x, y) {
-    const span = Math.max(this.glyph.width, this.glyph.height);
-    return [
-      ((x + 0.5) - this.glyph.width / 2) * (2 / span),
-      -((y + 0.5) - this.glyph.height / 2) * (2 / span),
-    ];
+  /**
+   * One map per live element — per element per plane, for the solid. The
+   * slots are fixed; placeMaps() fills them from the evolving elements.
+   */
+  createMaps(count) {
+    const turns = this.solid ? GlyphFractal.REVOLVE : 1;
+    return Array.from({ length: count * turns }, (_, i) => ({
+      element: i % count,
+      // The plane this copy is revolved into, about y.
+      phi: (Math.floor(i / count) / turns) * Math.PI * 2,
+      shift: (Math.floor(i / count) / turns) * 0.33,
+    }));
   }
 
-  bloomMaps() {
-    const { GAP, GREY } = GlyphFractal;
-    const { levels, width, height } = this.glyph;
-    const span = Math.max(width, height);
-    const cells = this.glyph.filled();
-    const reach = Math.max(1e-6, ...cells.map(({ x, y }) => Math.hypot(...this.cellCenter(x, y))));
-    // Copies sized so their areas add up to about the whole figure's. Exactly
-    // their cells' size, a drawing of twenty-odd cells in a 7×7 is sparse dust
-    // two levels down; this lets sparse drawings overlap into something lush,
-    // while a dense one like the carpet stays close to its cells.
-    const size = Math.max(GAP / span, Math.min(1.8 / span, 1 / Math.sqrt(cells.length)));
-    return cells.map(({ x, y, level, weight }) => {
-      const [cx, cy] = this.cellCenter(x, y);
-      const r = Math.hypot(cx, cy);
-      // Tilt about the axis across the cell's direction from the centre, so
-      // the copy lifts like a petal. The centre cell has no direction; it
-      // tilts about x.
-      const ax = r > 1e-6 ? -cy / r : 1;
-      const ay = r > 1e-6 ? cx / r : 0;
-      const black = level === levels;
-      return {
-        cx, cy, cz: 0, ax, ay, az: 0,
-        size: size * (black ? 1 : GREY) * (0.6 + 0.4 * weight),
-        lean: (r / reach) * (black ? 1 : -1),   // tilt, as a fraction of the fold
-        twist: black ? 1 : -1,
-        dim: black ? 1 : 0.55,
-        hue: Math.atan2(cy, cx) / (Math.PI * 2) + r * 0.15,
-      };
+  /** Copy this frame's live elements into the maps. */
+  placeMaps() {
+    const live = this.evolver.live;
+    let reach = 1e-6;
+    for (const e of live) if (e.sx > 0) reach = Math.max(reach, Math.hypot(e.x, e.y));
+    this.maps.forEach((map, i) => {
+      const e = live[map.element];
+      const d = Math.hypot(e.x, e.y);
+      const black = e.weight >= 0.5;
+      map.x = e.x;
+      map.y = e.y;
+      map.angle = e.angle;
+      map.sx = e.sx;
+      map.sy = e.sy;
+      // Tilt about the axis across the element's direction from the centre,
+      // so the copy lifts like a petal. One at the centre has no direction;
+      // it tilts about x.
+      map.ax = d > 1e-6 ? -e.y / d : 1;
+      map.ay = d > 1e-6 ? e.x / d : 0;
+      map.lean = Math.min(1, d / reach) * (black ? 1 : -1);   // tilt, as a fraction of the fold
+      map.twist = black ? 1 : -1;
+      this.dims[i] = 0.45 + 0.55 * e.weight;
+      this.hues[i] = e.hue + map.shift;
     });
   }
 
   /**
-   * Cubes whose three axis-aligned shadows all land on filled cells; null if
-   * the drawing doesn't fit a cube (it is read as its larger square).
+   * Pick maps in proportion to their area, so every copy fills in at the
+   * same density whatever its size — and an absent one is never picked.
    */
-  spongeMaps() {
-    const { GAP } = GlyphFractal;
-    const g = this.glyph;
-    const n = Math.max(g.width, g.height);
-    const maps = [];
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        const a = g.get(i, j);
-        if (!a) continue;
-        for (let k = 0; k < n; k++) {
-          const b = g.get(i, k);
-          const c = g.get(j, k);
-          if (!b || !c) continue;
-          const level = Math.min(a, b, c);
-          const c3 = (v) => ((v + 0.5) - n / 2) * (2 / n);
-          maps.push({
-            cx: c3(i), cy: -c3(j), cz: c3(k),
-            // Turn about y, in a checkerboard of opposite senses, so
-            // neighbouring copies wring against each other.
-            ax: 0, ay: 1, az: 0,
-            size: (1 / n) * GAP * (level === g.levels ? 1 : GlyphFractal.GREY),
-            lean: (i + j + k) % 2 ? 1 : -1,
-            twist: (i + j + k) % 2 ? -1 : 1,
-            dim: level === g.levels ? 1 : 0.55,
-            hue: (i + j * 0.6 + k * 0.3) / n,
-          });
-        }
-      }
+  reweigh() {
+    let total = 0;
+    for (const m of this.maps) total += m.sx * m.sy;
+    this.alive = total > 1e-9;
+    if (!this.alive) return;
+    const n = this.maps.length;
+    let k = 0;
+    for (let i = 0, acc = 0; i < n; i++) {
+      acc += (this.maps[i].sx * this.maps[i].sy) / total;
+      for (; k < Math.round(acc * TABLE) && k < TABLE; k++) this.table[k] = i;
     }
-    maps.sponge = true;
-    return maps;
+    // Rounding can leave the last few entries; give them the last live map.
+    for (; k < TABLE; k++) this.table[k] = this.table[k - 1] ?? 0;
   }
 
   onInput(slot, data) {
-    if (slot === 'jolt') this.kick = Math.max(this.kick, impact(data));
+    if (slot !== 'jolt') return;
+    this.kick = Math.max(this.kick, impact(data));
+    this.evolver.hit(impact(data));
   }
 
   /**
-   * Each map as a 3×4 matrix: scale, then twist about the copy's own normal
-   * (z; y for the sponge), then tilt about its lean axis, then move to its cell.
+   * Each map as a 3×4 matrix: stretch, turn in the plane (its own angle
+   * plus the twist), tilt about its lean axis, revolve into its plane, and
+   * move to its centre.
    */
   updateMaps() {
     const { SWELL, TWIST } = GlyphFractal;
     const m = this.matrices;
+    const [A, R, B] = this.scratch;
     const swell = 1 + this.kick * SWELL;
     const twist = Math.sin(this.phase) * TWIST;
+    // Revolved copies already stand in three planes; tilting them as far as
+    // the bloom's petals tangles the solid.
+    const tiltScale = this.solid ? 0.5 : 1;
     this.maps.forEach((map, i) => {
-      const s = map.size * swell;
-      // Twist: about z for bloom, about the map's own axis for the sponge.
-      const tw = twist * map.twist;
-      const ct = Math.cos(tw);
-      const st = Math.sin(tw);
-      // Tilt by angle `a` about the unit axis (ax, ay, az): Rodrigues.
-      // The sponge's copies turn in place rather than lift, and a cube
-      // turned far reads as a mess rather than a sculpture: a third as far.
-      const a = this.sponge
-        ? this.fold * map.lean * 0.35
-        : (this.fold + this.kick * 0.25) * map.lean;
+      // A = turn · stretch. Depth gets the geometric mean of the two sizes.
+      const turn = map.angle + twist * map.twist;
+      const ca = Math.cos(turn);
+      const sa = Math.sin(turn);
+      const sx = map.sx * swell;
+      const sy = map.sy * swell;
+      A.set([ca * sx, -sa * sy, 0, sa * sx, ca * sy, 0, 0, 0, Math.sqrt(sx * sy)]);
+      // R = tilt by `a` about the unit axis (ax, ay, 0): Rodrigues.
+      const a = (this.fold + this.kick * 0.25) * map.lean * tiltScale;
       const c = Math.cos(a);
       const sn = Math.sin(a);
       const t = 1 - c;
-      const { ax, ay, az } = this.sponge ? { ax: 1, ay: 0, az: 0 } : map;
-      const r00 = t * ax * ax + c, r01 = t * ax * ay - sn * az, r02 = t * ax * az + sn * ay;
-      const r10 = t * ax * ay + sn * az, r11 = t * ay * ay + c, r12 = t * ay * az - sn * ax;
-      const r20 = t * ax * az - sn * ay, r21 = t * ay * az + sn * ax, r22 = t * az * az + c;
-      // Twist matrix T: about z (bloom) or y (sponge).
-      let t00, t01, t02, t10, t11, t12, t20, t21, t22;
-      if (this.sponge) {
-        t00 = ct; t01 = 0; t02 = st;
-        t10 = 0; t11 = 1; t12 = 0;
-        t20 = -st; t21 = 0; t22 = ct;
-      } else {
-        t00 = ct; t01 = -st; t02 = 0;
-        t10 = st; t11 = ct; t12 = 0;
-        t20 = 0; t21 = 0; t22 = 1;
+      const { ax, ay } = map;
+      R.set([
+        t * ax * ax + c, t * ax * ay, sn * ay,
+        t * ax * ay, t * ay * ay + c, -sn * ax,
+        -sn * ay, sn * ax, c,
+      ]);
+      mul3(B, R, A);
+      let { x, y } = map;
+      let z = 0;
+      if (map.phi) {
+        // Revolve about y: rows 0 and 2 of B, and the centre, turn by phi.
+        const cp = Math.cos(map.phi);
+        const sp = Math.sin(map.phi);
+        for (let col = 0; col < 3; col++) {
+          const r0 = B[col];
+          const r2 = B[6 + col];
+          B[col] = cp * r0 + sp * r2;
+          B[6 + col] = -sp * r0 + cp * r2;
+        }
+        z = -sp * x;
+        x = cp * x;
       }
       const j = i * 12;
-      m[j] = s * (r00 * t00 + r01 * t10 + r02 * t20);
-      m[j + 1] = s * (r00 * t01 + r01 * t11 + r02 * t21);
-      m[j + 2] = s * (r00 * t02 + r01 * t12 + r02 * t22);
-      m[j + 3] = s * (r10 * t00 + r11 * t10 + r12 * t20);
-      m[j + 4] = s * (r10 * t01 + r11 * t11 + r12 * t21);
-      m[j + 5] = s * (r10 * t02 + r11 * t12 + r12 * t22);
-      m[j + 6] = s * (r20 * t00 + r21 * t10 + r22 * t20);
-      m[j + 7] = s * (r20 * t01 + r21 * t11 + r22 * t21);
-      m[j + 8] = s * (r20 * t02 + r21 * t12 + r22 * t22);
-      m[j + 9] = map.cx;
-      m[j + 10] = map.cy;
-      m[j + 11] = map.cz;
+      for (let k = 0; k < 9; k++) m[j + k] = B[k];
+      m[j + 9] = x;
+      m[j + 10] = y;
+      m[j + 11] = z;
     });
   }
 
   /** Run the chaos game PER_FRAME times into the ring buffer. */
   iterate() {
     const { PER_FRAME, CLOUD } = GlyphFractal;
+    if (!this.alive) return;
     const { table, matrices: m, hues, dims, cloud, tones } = this;
     let { x, y, z, hue, bright, write: w } = this;
+    let mx = 0, my = 0, mz = 0;
     for (let i = 0; i < PER_FRAME; i++) {
       const k = table[(Math.random() * TABLE) | 0];
       const j = k * 12;
@@ -449,11 +455,15 @@ export class GlyphFractal extends ThreeVisualization {
       cloud[c] = x;
       cloud[c + 1] = y;
       cloud[c + 2] = z;
+      mx += x;
+      my += y;
+      mz += z;
       tones[w * 2] = hue;
       tones[w * 2 + 1] = bright;
       w = (w + 1) % CLOUD;
     }
     Object.assign(this, { x, y, z, hue, bright, write: w });
+    this.mean.set(mx / PER_FRAME, my / PER_FRAME, mz / PER_FRAME);
     this.filled = Math.min(CLOUD, this.filled + PER_FRAME);
     this.position.needsUpdate = true;
     this.tone.needsUpdate = true;
@@ -468,9 +478,15 @@ export class GlyphFractal extends ThreeVisualization {
     this.kick *= Math.exp(-dt * KICK_DECAY);
     this.colorPhase += dt * (0.03 + spin * 0.06);
 
+    this.evolver.update(dt, this.in('mutate'));
+    this.placeMaps();
     this.updateMaps();
-    if (this.sponge) this.updateCubes();
-    else this.iterate();
+    if (this.solid) {
+      this.updateCubes();
+    } else {
+      this.reweigh();
+      this.iterate();
+    }
 
     const orbit = ORBIT[0] + spin * ORBIT[1];
     this.swoop.update(dt, orbit);
@@ -478,7 +494,7 @@ export class GlyphFractal extends ThreeVisualization {
     const { scale, angle } = this.swoop;
     const dist = VIEW * scale;
     const cam = this.camera;
-    if (this.sponge) {
+    if (this.solid) {
       // A solid: circle it, rising and sinking.
       const elevation = Math.sin(this.lift) * 0.7;
       cam.position.set(
@@ -497,13 +513,18 @@ export class GlyphFractal extends ThreeVisualization {
         Math.cos(tilt) * dist,
       );
     }
+    // Follow the figure's centre: a figure that is growing, drifting or
+    // morphing doesn't stay centred on the origin.
+    const follow = 1 - Math.exp(-dt / 0.8);
+    this.center.lerp(this.mean, follow);
+    cam.position.add(this.center);
     this.swoop.aim(cam, this.center);
     if (cam.aspect !== this.width / this.height) {
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();
     }
 
-    if (this.sponge) {
+    if (this.solid) {
       this.headlight.position.copy(cam.position);
       this.glow.value = 0.15 + this.in('glow') * 0.4 + this.kick * 0.4;
       this.present(ctx);
@@ -559,3 +580,15 @@ void main() {
   gl_FragColor = vec4(vColor * a, a * 0.25);
 }
 `;
+
+/** out = p · q, for 3×3 row-major matrices. */
+function mul3(out, p, q) {
+  for (let r = 0; r < 3; r++) {
+    const p0 = p[r * 3];
+    const p1 = p[r * 3 + 1];
+    const p2 = p[r * 3 + 2];
+    out[r * 3] = p0 * q[0] + p1 * q[3] + p2 * q[6];
+    out[r * 3 + 1] = p0 * q[1] + p1 * q[4] + p2 * q[7];
+    out[r * 3 + 2] = p0 * q[2] + p1 * q[5] + p2 * q[8];
+  }
+}

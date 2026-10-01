@@ -71,7 +71,7 @@ export class GlyphFlow extends ThreeVisualization {
     palette: PALETTE_OPTION,
   };
   // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options.glyph);
+  static fallback = mosaicOf(this.options);
 
   static SPAN = 8;             // the drawing's width in world units
   static SPEED = [1.6, 2.4];   // stream speed: [idle, added at full flow]

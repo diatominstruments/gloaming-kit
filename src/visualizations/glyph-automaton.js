@@ -79,7 +79,7 @@ export class GlyphAutomaton extends ThreeVisualization {
     distance: DISTANCE_OPTION,
   };
   // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options.glyph);
+  static fallback = mosaicOf(this.options);
 
   static SLICES = 44;          // generations shown
   static RATE = [1.2, 4];      // generations/s: [idle, added at full rate]

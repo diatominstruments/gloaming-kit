@@ -71,7 +71,7 @@ export class GlyphTunnel extends ThreeVisualization {
     palette: PALETTE_OPTION,
   };
   // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options.glyph);
+  static fallback = mosaicOf(this.options);
 
   static RADIUS = 3;          // tunnel radius (wall); outer radius (section)
   static INNER = 1.3;         // section: radius of the drawing's bottom row

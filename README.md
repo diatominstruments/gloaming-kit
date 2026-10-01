@@ -326,8 +326,8 @@ showing the same drawing.
 
 | id | what it does |
 |----|--------------|
-| `glyph-mosaic` | the drawing made of small copies of itself, each turning on its own phase so the mosaic ripples; hits swell and flash the copies. 2D, and what the others draw when 3D is off |
-| `glyph-fractal` | the drawing made of copies of itself all the way down — each filled cell is a map that shrinks the whole figure into it, played as a chaos game, so a plus gives a Vicsek fractal and a ring of eight a Sierpiński carpet. Option `form`: `bloom` (default) tilts the copies out of the plane like petals, black one way and grey the other, as a point cloud; `sponge` keeps the cubes whose three shadows all land on filled cells (a ring of eight gives the Menger sponge) and draws them as lit cubes nested two or three levels deep. The `fold` input (bass) sets the tilt, `spin` the copies' twist, and hits swell them. Option `distance` as `nebula` |
+| `glyph-mosaic` | a rose window grown from the drawing: it is read into a handful of elements (option `interpret`, default `rosette`; see [Glyphs](#glyphs)), each holding a translucent petal with the whole arrangement nested inside it again, two to five levels deep. Petals add up like stained glass and turn on their own phases, compounding down the levels so the window swirls; option `evolve` (default `drift`) keeps the structure itself changing. Hits swell and flash them. 2D, and what the others draw when 3D is off |
+| `glyph-fractal` | a fractal grown from the drawing: it is read into elements (option `interpret`, default `contour`), each becomes a map shrinking the whole figure into it — moved, turned and stretched to match — and the maps are played as a chaos game. Copies strung along an outline curl into lacy filaments, a few stretched blobs grow fronds, a rosette grows whorls. Option `evolve` (default `drift`) keeps it alive: it mutates, grows, or morphs between readings rather than holding one shape — see [Evolution](#evolution). Option `form`: `bloom` (default) is a point cloud whose copies tilt out of the plane like petals, mostly-black elements one way and mostly-grey the other; `solid` revolves the elements into three planes and draws the figure as lit, stretched cubes nested two or three levels deep — a crystal. The `fold` input (bass) sets the tilt, `spin` the copies' twist, and hits swell them. Option `distance` as `nebula` |
 | `glyph-automaton` | the drawing as the first generation of a cellular automaton, each generation a slice of lit cubes stacked into a tower that sinks as new ones land on top — gliders leave diagonal tubes, oscillators pillars. Bass hits step a generation and light that slice for good, so the tower's sides record where the beats fell; snare hits plant the drawing again; it replants itself when the pattern dies or repeats. Option `rule`: `brain` (default; Brian's Brain), `life`, `star-wars` — black cells start alive and grey ones dying. Option `distance` |
 | `glyph-tunnel` | flight down a tunnel built from the drawing: black cells are lit stone, grey ones panes of translucent light, repeated `repeat` times round it with every other copy mirrored. Option `wrap`: `wall` (default) carves it in relief on the wall, rows running down the tunnel; `section` makes every ring the whole drawing bent into an annulus, twisting into a spiral. Hits send swells down it |
 | `glyph-city` | flight between two endless cities planned from the drawing — filled cells are towers, black tall and grey low, the plan tiled to the horizon and hung upside down overhead. Each column is a band of the spectrum, so every street rises and falls with its part of the mix. Edges and streets glow; hits roll light down the streets. Option `twist` (`off`, `low`, `med`, `high`) corkscrews the two cities round each other ahead; `speed`. Ray-marched in the background layer at half resolution |
@@ -425,8 +425,8 @@ intensity plus 0.25 relative.
 | `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
-| `glyph-mosaic` | `pulse` ← bass | `spin` ← int mid, `glow` ← mix treble |
-| `glyph-fractal` | `jolt` ← bass | `fold` ← 0.5 int bass + 0.5 rel bass, `spin` ← int mid, `glow` ← mix treble |
+| `glyph-mosaic` | `pulse` ← bass | `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
+| `glyph-fractal` | `jolt` ← bass | `fold` ← 0.5 int bass + 0.5 rel bass, `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
 | `glyph-automaton` | `step` ← bass, `stamp` ← snare | `rate` ← int mid, `glow` ← mix treble |
 | `glyph-tunnel` | `ripple` ← bass | `spin` ← int mid, `glow` ← mix treble |
 | `glyph-city` | `pulse` ← bass | `twist` ← int mid, `shimmer` ← mix treble, `travel` ← int rms (smoothed 2 s) |
@@ -562,6 +562,46 @@ g.width; g.height; g.get(x, y);         // strength 0–levels, 0 outside
 g.filled();                             // [{ x, y, level, weight }, …]
 g.toRows();                             // back to strings
 ```
+
+### Interpretations
+
+A drawing is an abstract input, not a picture to reproduce, so `glyph-mosaic`
+and `glyph-fractal` don't copy cells onto the screen. They first *read* the
+drawing into a handful of elements — oriented, stretched blobs, each with a
+position, angle, two sizes, a weight (how much was drawn black) and a hue —
+and build from those. Option `interpret` picks the reading, independently of
+what the visualization then builds, so all three pair with either one:
+
+| `interpret` | how the drawing is read |
+|-------------|-------------------------|
+| `contour` | blurred into a smooth shape, with elements strung evenly along its outline, each turned to follow it. Blocky cells become flowing curves: a ring becomes a loop, a line a long hairpin |
+| `clusters` | touching cells merge into blobs, large regions split into a few, and each blob becomes one element at its centre of mass, sized by its mass and stretched along its own grain. Few, uneven, organic pieces |
+| `rosette` | wrapped round a circle — columns go round, rows run from the rim (top) to the hub (bottom) — with every unbroken run down a column becoming one petal pointing outward. Any drawing becomes a radial flower |
+
+Every reading is normalized the same way — centred, fitted to the figure,
+and sized so the elements' areas add up to most of it with none too large —
+so placing a copy of the whole figure in each one is always a contraction,
+as a fractal needs. The readings are in
+[src/visualizations/glyph-interpret.js](src/visualizations/glyph-interpret.js)
+as `interpret(glyph, name)`, for any visualization to use.
+
+### Evolution
+
+A reading is a snapshot; option `evolve` keeps it alive, so the structure
+itself changes over time rather than only turning and swelling. It works on
+the elements, so it pairs with any reading and with either visualization:
+
+| `evolve` | what happens |
+|----------|--------------|
+| `drift` | every element wanders on its own slow noise path — moving, turning, stretching and swelling a little — so the figure mutates continuously and never repeats. Hits jolt a few elements at random: a mutation on the beat that heals slowly |
+| `grow` | the figure assembles itself element by element along the reading, each one sprouting out of the one before. Once most are grown the oldest start withering as new ones sprout, so a growth front travels round it forever, and every regrowth is a mutation (a new turn and stretch). Hits sprout the next element at once |
+| `morph` | the figure flows between the three readings in turn — contour, clusters, rosette — holding each a while, elements sliding, turning and resizing into their new places, extras sprouting from or shrinking into their neighbours. Hits hurry the next change along |
+| `still` | the reading as it is |
+
+The `mutate` input sets how fast (mid by default). A changing figure wanders
+off the origin, so both visualizations follow its centre. Evolution is in
+[src/visualizations/glyph-evolve.js](src/visualizations/glyph-evolve.js), as
+an `Evolver` any visualization built on elements can use.
 
 To write one, declare the option with `glyphOption()` and read it with
 `readGlyph(this)`, both in

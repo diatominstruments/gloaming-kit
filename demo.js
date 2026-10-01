@@ -262,14 +262,31 @@
     for (const d of group.visualizations) {
       const entry = w.visualizations.find((e) => e.id === d.id);
       if (!entry) continue;
-      for (const spec of d.options.filter((o) => o.kind === 'grid')) {
-        const label = document.createElement('div');
-        label.className = 'glyph-label';
-        label.textContent = `${d.label} — ${spec.name}`;
-        container.append(label, glyphEditor(spec, entry.options?.[spec.name], (rows) => {
-          entry.options = { ...entry.options, [spec.name]: rows };
-          apply();
-        }));
+      const grids = d.options.filter((o) => o.kind === 'grid');
+      if (!grids.length) continue;
+      const set = (name, value) => {
+        entry.options = { ...entry.options, [name]: value };
+        apply();
+      };
+      const heading = document.createElement('div');
+      heading.className = 'glyph-label';
+      heading.textContent = d.label;
+      container.appendChild(heading);
+      // Its other choices alongside the drawing — how it's read, its form…
+      for (const spec of d.options.filter((o) => o.kind === 'enum')) {
+        const row = document.createElement('div');
+        row.className = 'row glyph-choice';
+        const label = document.createElement('label');
+        label.textContent = spec.name;
+        const select = document.createElement('select');
+        for (const value of spec.values) select.add(new Option(value, value));
+        select.value = entry.options?.[spec.name] ?? spec.default ?? spec.values[0];
+        select.addEventListener('change', () => set(spec.name, select.value));
+        row.append(label, select);
+        container.appendChild(row);
+      }
+      for (const spec of grids) {
+        container.appendChild(glyphEditor(spec, entry.options?.[spec.name], (rows) => set(spec.name, rows)));
       }
     }
   }
