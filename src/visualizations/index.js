@@ -24,6 +24,7 @@ import { Nebula } from './nebula.js';
 import { HelixCorridor } from './helix-corridor.js';
 import { Tesseract } from './tesseract.js';
 import { GlyphMosaic } from './glyph-mosaic.js';
+import { GlyphWindow } from './glyph-window.js';
 import { GlyphFractal } from './glyph-fractal.js';
 import { GlyphAutomaton } from './glyph-automaton.js';
 import { GlyphTunnel } from './glyph-tunnel.js';
@@ -53,7 +54,7 @@ export const registry = new Map(
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
     Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D, DeJong3D, Clifford3D, Bedhead3D,
     FractalCathedral, SpectrumTerrain, Nebula, HelixCorridor, Tesseract,
-    GlyphMosaic, GlyphFractal, GlyphAutomaton, GlyphTunnel, GlyphCity, GlyphFlow,
+    GlyphMosaic, GlyphFractal, GlyphAutomaton, GlyphTunnel, GlyphCity, GlyphFlow, GlyphWindow,
     PerlinGlow, InfinityMirror, Kaleidoscope, TextGhosts, DotGrid, Moire, LightLeaks,
     Scanlines,
   ].map((V) => [V.id, V]),
@@ -107,6 +108,7 @@ export const VIZ = Object.freeze({
   GLYPH_TUNNEL: GlyphTunnel.id,
   GLYPH_CITY: GlyphCity.id,
   GLYPH_FLOW: GlyphFlow.id,
+  GLYPH_WINDOW: GlyphWindow.id,
   PERLIN_GLOW: PerlinGlow.id,
   INFINITY_MIRROR: InfinityMirror.id,
   KALEIDOSCOPE: Kaleidoscope.id,

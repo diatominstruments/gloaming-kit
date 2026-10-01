@@ -229,3 +229,20 @@ export const EYE = [
   '....1111....',
   '............',
 ];
+
+// One long stroke, winding in: growth that follows the drawing has a path
+// to travel, from the outer end to a fainter tip at the centre.
+export const SPIRAL = [
+  '22222222222.',
+  '..........2.',
+  '.22222222.2.',
+  '.2......2.2.',
+  '.2.2222.2.2.',
+  '.2.2..2.2.2.',
+  '.2.2.11.2.2.',
+  '.2.2....2.2.',
+  '.2.222222.2.',
+  '.2........2.',
+  '.2222222222.',
+  '............',
+];

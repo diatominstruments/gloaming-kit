@@ -6,7 +6,7 @@ import {
   PALETTE_OPTION, PALETTE_GLSL, paletteUniforms, updatePalette, isPsychedelic,
   DISTANCE_OPTION, Swoop, paletteColor, instanceGlow,
 } from './three-shared.js';
-import { mosaicOf } from './glyph-mosaic.js';
+import { windowOf } from './glyph-window.js';
 import { Glyph, glyphOption, readGlyph, FLOWER } from './glyph.js';
 import { interpret, interpretOption } from './glyph-interpret.js';
 import { Evolver, evolveOption } from './glyph-evolve.js';
@@ -91,8 +91,8 @@ export class GlyphFractal extends ThreeVisualization {
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
   };
-  // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options);
+  // The 2D window, wearing this one's default drawing.
+  static fallback = windowOf(this.options);
 
   static CUBES = 12000;       // most cubes the solid may nest into
   static REVOLVE = 3;         // solid: planes the elements are revolved into

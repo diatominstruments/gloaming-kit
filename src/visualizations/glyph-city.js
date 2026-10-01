@@ -7,7 +7,7 @@ import {
   PALETTE_OPTION, PALETTE_GLSL, paletteUniforms, updatePalette, isPsychedelic,
   FULLSCREEN_VERTEX, logSpectrum,
 } from './three-shared.js';
-import { mosaicOf } from './glyph-mosaic.js';
+import { windowOf } from './glyph-window.js';
 import { glyphOption, readGlyph, INVADER, MAX_SIZE } from './glyph.js';
 
 const PULSES = 3;
@@ -67,8 +67,8 @@ export class GlyphCity extends ThreeVisualization {
     speed: { kind: 'enum', values: Object.keys(SPEEDS), default: 'med' },
     palette: PALETTE_OPTION,
   };
-  // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options);
+  // The 2D window, wearing this one's default drawing.
+  static fallback = windowOf(this.options);
 
   static RESOLUTION = 0.5;
 

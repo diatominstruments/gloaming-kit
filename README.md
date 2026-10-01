@@ -321,17 +321,18 @@ each loop, so passes come in from different directions.
 **Glyphs** — structures grown from a small drawing the viewer makes. Each
 takes a `glyph` option, a coarse grid of cells at a few strengths; see
 [Glyphs](#glyphs) for the format and for building an editor. The 3D ones
-take a `palette` option like the Spaces, and fall back to `glyph-mosaic`
-showing the same drawing.
+take a `palette` option like the Spaces, and fall back to the 2D
+`glyph-window` growing from the same drawing.
 
 | id | what it does |
 |----|--------------|
-| `glyph-mosaic` | a rose window grown from the drawing: it is read into a handful of elements (option `interpret`, default `rosette`; see [Glyphs](#glyphs)), each holding a translucent petal with the whole arrangement nested inside it again, two to five levels deep. Petals add up like stained glass and turn on their own phases, compounding down the levels so the window swirls; option `evolve` (default `drift`) keeps the structure itself changing. Hits swell and flash them. 2D, and what the others draw when 3D is off |
+| `glyph-mosaic` | a crystal garden grown along the drawing: the drawing is a plan on the ground, and growth starts at the outer end of each stroke and travels along it cell to cell, a crystal sprouting at each one as the front arrives — its root leaning the way the growth came — and branching into smaller solids two to four levels deep. Fully grown, it holds, dissolves in the order it grew, and regrows from where the last growth ended with every crystal mutated, so it is never the same garden twice. Grey cells grow smaller, dimmer crystals; colour flows along the drawing. Hits send a wave of light along the strokes and spur the growth. Option `shape`: `crystal` (default; branching prisms), `coral` (wide budding lumps), `spire` (tall forking diamonds); and `distance`. Draws its best from a drawing of long strokes — the default is a spiral |
 | `glyph-fractal` | a fractal grown from the drawing: it is read into elements (option `interpret`, default `contour`), each becomes a map shrinking the whole figure into it — moved, turned and stretched to match — and the maps are played as a chaos game. Copies strung along an outline curl into lacy filaments, a few stretched blobs grow fronds, a rosette grows whorls. Option `evolve` (default `drift`) keeps it alive: it mutates, grows, or morphs between readings rather than holding one shape — see [Evolution](#evolution). Option `form`: `bloom` (default) is a point cloud whose copies tilt out of the plane like petals, mostly-black elements one way and mostly-grey the other; `solid` revolves the elements into three planes and draws the figure as lit, stretched cubes nested two or three levels deep — a crystal. The `fold` input (bass) sets the tilt, `spin` the copies' twist, and hits swell them. Option `distance` as `nebula` |
 | `glyph-automaton` | the drawing as the first generation of a cellular automaton, each generation a slice of lit cubes stacked into a tower that sinks as new ones land on top — gliders leave diagonal tubes, oscillators pillars. Bass hits step a generation and light that slice for good, so the tower's sides record where the beats fell; snare hits plant the drawing again; it replants itself when the pattern dies or repeats. Option `rule`: `brain` (default; Brian's Brain), `life`, `star-wars` — black cells start alive and grey ones dying. Option `distance` |
 | `glyph-tunnel` | flight down a tunnel built from the drawing: black cells are lit stone, grey ones panes of translucent light, repeated `repeat` times round it with every other copy mirrored. Option `wrap`: `wall` (default) carves it in relief on the wall, rows running down the tunnel; `section` makes every ring the whole drawing bent into an annulus, twisting into a spiral. Hits send swells down it |
 | `glyph-city` | flight between two endless cities planned from the drawing — filled cells are towers, black tall and grey low, the plan tiled to the horizon and hung upside down overhead. Each column is a band of the spectrum, so every street rises and falls with its part of the mix. Edges and streets glow; hits roll light down the streets. Option `twist` (`off`, `low`, `med`, `high`) corkscrews the two cities round each other ahead; `speed`. Ray-marched in the background layer at half resolution |
 | `glyph-flow` | a stream of light parting round the drawing as an obstacle, so it shows as a hole outlined in fire; streaks that skim it carry the accent colour downstream, tracing it in their wakes, and each cell swirls the stream (black one way, grey the other). Hits inflate the obstacle so the stream bursts outward. Options `distance` (`near`, `med`, `far`) and `count` |
+| `glyph-window` | a rose window grown from the drawing: it is read into a handful of elements (option `interpret`, default `rosette`; see [Glyphs](#glyphs)), each holding a translucent petal with the whole arrangement nested inside it again, two to five levels deep. Petals add up like stained glass and turn on their own phases, compounding down the levels so the window swirls; option `evolve` (default `drift`) keeps the structure itself changing. Hits swell and flash them. 2D, and what the others draw when 3D is off |
 
 **Backgrounds** — full-screen fields that draw in the background layer (see
 [Layers](#layers)), so they sit behind anything else in the window whatever
@@ -425,7 +426,8 @@ intensity plus 0.25 relative.
 | `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
-| `glyph-mosaic` | `pulse` ← bass | `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
+| `glyph-mosaic` | `pulse` ← bass | `grow` ← int mid (smoothed), `sway` ← int highMid, `glow` ← mix treble |
+| `glyph-window` | `pulse` ← bass | `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
 | `glyph-fractal` | `jolt` ← bass | `fold` ← 0.5 int bass + 0.5 rel bass, `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
 | `glyph-automaton` | `step` ← bass, `stamp` ← snare | `rate` ← int mid, `glow` ← mix treble |
 | `glyph-tunnel` | `ripple` ← bass | `spin` ← int mid, `glow` ← mix treble |
@@ -565,7 +567,7 @@ g.toRows();                             // back to strings
 
 ### Interpretations
 
-A drawing is an abstract input, not a picture to reproduce, so `glyph-mosaic`
+A drawing is an abstract input, not a picture to reproduce, so `glyph-window`
 and `glyph-fractal` don't copy cells onto the screen. They first *read* the
 drawing into a handful of elements — oriented, stretched blobs, each with a
 position, angle, two sizes, a weight (how much was drawn black) and a hue —

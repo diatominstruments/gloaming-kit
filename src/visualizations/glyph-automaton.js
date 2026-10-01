@@ -5,7 +5,7 @@ import { TRIGGER } from '../analyzer.js';
 import {
   PALETTE_OPTION, DISTANCE_OPTION, Swoop, paletteColor, isPsychedelic, instanceGlow,
 } from './three-shared.js';
-import { mosaicOf } from './glyph-mosaic.js';
+import { windowOf } from './glyph-window.js';
 import { glyphOption, readGlyph, MANDALA } from './glyph.js';
 
 /**
@@ -78,8 +78,8 @@ export class GlyphAutomaton extends ThreeVisualization {
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
   };
-  // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options);
+  // The 2D window, wearing this one's default drawing.
+  static fallback = windowOf(this.options);
 
   static SLICES = 44;          // generations shown
   static RATE = [1.2, 4];      // generations/s: [idle, added at full rate]

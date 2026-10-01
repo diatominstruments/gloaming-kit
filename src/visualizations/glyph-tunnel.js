@@ -5,7 +5,7 @@ import { TRIGGER } from '../analyzer.js';
 import {
   PALETTE_OPTION, paletteColor, isPsychedelic, instanceGlow, fogToAlpha,
 } from './three-shared.js';
-import { mosaicOf } from './glyph-mosaic.js';
+import { windowOf } from './glyph-window.js';
 import { glyphOption, readGlyph, CHEVRONS } from './glyph.js';
 
 const TAU = Math.PI * 2;
@@ -70,8 +70,8 @@ export class GlyphTunnel extends ThreeVisualization {
     repeat: { kind: 'number', default: 2, min: 1, max: 6, step: 1 },
     palette: PALETTE_OPTION,
   };
-  // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options);
+  // The 2D window, wearing this one's default drawing.
+  static fallback = windowOf(this.options);
 
   static RADIUS = 3;          // tunnel radius (wall); outer radius (section)
   static INNER = 1.3;         // section: radius of the drawing's bottom row

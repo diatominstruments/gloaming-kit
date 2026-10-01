@@ -6,7 +6,7 @@ import { mulberry32 } from '../noise.js';
 import {
   PALETTE_OPTION, PALETTE_GLSL, paletteUniforms, updatePalette, isPsychedelic,
 } from './three-shared.js';
-import { mosaicOf } from './glyph-mosaic.js';
+import { windowOf } from './glyph-window.js';
 import { glyphOption, readGlyph, EYE } from './glyph.js';
 
 const DISTANCES = { near: 0.55, med: 1, far: 1.5 };
@@ -70,8 +70,8 @@ export class GlyphFlow extends ThreeVisualization {
     count: { kind: 'number', default: 24000, min: 4000, max: 60000, step: 1000 },
     palette: PALETTE_OPTION,
   };
-  // The mosaic, wearing this one's default drawing.
-  static fallback = mosaicOf(this.options);
+  // The 2D window, wearing this one's default drawing.
+  static fallback = windowOf(this.options);
 
   static SPAN = 8;             // the drawing's width in world units
   static SPEED = [1.6, 2.4];   // stream speed: [idle, added at full flow]
