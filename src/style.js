@@ -37,6 +37,17 @@ const channel = (n) =>
 export const formatColor = ([r, g, b]) => `#${channel(r)}${channel(g)}${channel(b)}`;
 
 /**
+ * `a` blended toward `b` by `t` (0–1), as hex. Anything parseColor can't read
+ * snaps at the halfway point instead, as easeStyle does.
+ */
+export function mixColor(a, b, t) {
+  const from = parseColor(a);
+  const to = parseColor(b);
+  if (!from || !to) return t < 0.5 ? a : b;
+  return formatColor(from.map((c, i) => c + (to[i] - c) * t));
+}
+
+/**
  * One colour channel's step. Colours are stored as hex, so every step is
  * rounded to a whole channel value — and near the target a frame's step is
  * under half a unit, which rounds straight back to where it started. Left

@@ -1,5 +1,6 @@
-import { Visualization, approach, impact } from './base.js';
+import { Visualization, approach, clamp01, impact } from './base.js';
 import { TRIGGER } from '../analyzer.js';
+import { mixColor } from '../style.js';
 
 /** Expand a scalar static into one entry per parameter. */
 const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill(value));
@@ -99,8 +100,20 @@ export class AttractorBase extends Visualization {
  * Subclasses implement `step(x, y, p, out)`, writing the next point into
  * `out`. It runs thousands of times per frame, so it takes an out-parameter
  * and indexes `p` directly rather than returning or destructuring arrays.
+ *
+ * The `accent` slot blends the cloud from lineColor toward accentColor. By
+ * default it is an envelope on bass hits, so the figure flashes on each one
+ * and fades back; bind it to a band for a steady colour that follows the mix:
+ *
+ *   { id: 'clifford', bind: { accent: { trigger: 'snare', decay: 4 } } }
+ *   { id: 'clifford', bind: { accent: { intensity: 'treble', smooth: 0.3 } } }
  */
 export class PointCloudAttractor extends AttractorBase {
+  static inputs = {
+    ...AttractorBase.inputs,
+    accent: { kind: 'level', default: { trigger: TRIGGER.BASS, decay: 2.5 } },
+  };
+
   static POINTS = 3200;
   static SEED = [0.1, 0.1];
   static DOT = 1.4;
@@ -118,6 +131,11 @@ export class PointCloudAttractor extends AttractorBase {
     out[1] = y;
   }
 
+  /** How far toward accentColor to draw, 0–1, from the `accent` slot. */
+  accentMix() {
+    return clamp01(this.in('accent'));
+  }
+
   draw(ctx, dt) {
     const { POINTS, SCALE, SEED, DOT, LIMIT } = this.constructor;
     this.updateParams(dt);
@@ -130,6 +148,9 @@ export class PointCloudAttractor extends AttractorBase {
 
     this.applyStyle(ctx);
     ctx.shadowBlur = 0; // thousands of points — glow is unaffordable here
+    ctx.fillStyle = mixColor(
+      this.style.lineColor, this.style.accentColor ?? this.style.lineColor, this.accentMix(),
+    );
     const baseAlpha = ctx.globalAlpha; // preserve the engine's crossfade
     ctx.globalAlpha = baseAlpha * this.brightness();
 

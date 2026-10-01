@@ -1,11 +1,16 @@
 import { flowRibbon } from './flow-ribbon.js';
+import { pointCloud3D } from './point-cloud-3d.js';
+import { DeJong } from './attractor.js';
+import { Clifford } from './clifford.js';
+import { Bedhead } from './bedhead.js';
 import { Thomas } from './thomas.js';
 import { Aizawa } from './aizawa.js';
 import { Rossler } from './rossler.js';
 import { Halvorsen } from './halvorsen.js';
 
 /**
- * The 3D flow attractors: each is its 2D class rendered by flowRibbon, and
+ * The 3D attractors: each is its 2D class rendered by flowRibbon (flows) or
+ * pointCloud3D (maps), and
  * falls back to that class when 3D is off or unavailable. The systems, their
  * tuning and their options all live in the 2D files; only how they look
  * differs, so nothing here but ids and descriptions.
@@ -33,4 +38,22 @@ export class Halvorsen3D extends flowRibbon(Halvorsen) {
   static id = 'halvorsen-3d';
   static label = 'Halvorsen 3D';
   static description = 'Halvorsen attractor in depth: three horns thickening as they run toward the camera.';
+}
+
+export class DeJong3D extends pointCloud3D(DeJong) {
+  static id = 'attractor-3d';
+  static label = 'De Jong 3D';
+  static description = 'De Jong attractor lifted into depth and turning, so its folded sheets pull apart.';
+}
+
+export class Clifford3D extends pointCloud3D(Clifford) {
+  static id = 'clifford-3d';
+  static label = 'Clifford 3D';
+  static description = 'Clifford attractor lifted into depth and turning, its filaments separating into layers.';
+}
+
+export class Bedhead3D extends pointCloud3D(Bedhead) {
+  static id = 'bedhead-3d';
+  static label = 'Bedhead 3D';
+  static description = 'Bedhead attractor lifted into depth and turning, its whorls stacking into a sculpture.';
 }

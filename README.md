@@ -282,14 +282,15 @@ attractors (`attractor` through `halvorsen`) are reported as their own
 | id | what it does |
 |----|--------------|
 | `lightning` | branching bolts that strike and grow outward from the impact point, revealed by an advancing frontier so forks light up in the order the charge reaches them; big hits add a screen flash |
-| `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure |
-| `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions as `attractor` |
-| `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions as `attractor` |
+| `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure. Its `accent` slot blends the cloud from `lineColor` toward `accentColor`: a bass-hit envelope by default, so it flashes on hits, or bind a band for a steady shift, e.g. `bind: { accent: { intensity: 'treble', smooth: 0.3 } }` |
+| `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions and `accent` slot as `attractor` |
+| `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions and `accent` slot as `attractor` |
 | `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon, viewed from inside the lattice (`distance: 'near'`) so cells sweep past the camera; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
 | `aizawa` | Aizawa attractor as a rotating ribbon; a shell wound into tight concentric spirals by a fast reversed spin. Same reactions as `thomas`, and the one most worth trying at `distance: 'near'` |
 | `rossler` | Rössler attractor as a rotating ribbon; a broad flat disc with one lifted fold, so the silhouette changes markedly as the view turns. Its fold threshold drifts over a wide band, growing and shrinking the whole figure fourfold — it reads as the attractor rushing in and falling away. Same reactions as `thomas` |
 | `halvorsen` | Halvorsen attractor as a rotating ribbon; cyclically symmetric like `thomas` but coiled into three tight horns rather than sprawling, and scaled past the frame so the horns run off every edge. Same reactions as `thomas` |
 | `thomas-3d`, `aizawa-3d`, `rossler-3d`, `halvorsen-3d` | the four flow attractors above, rendered with three.js: the same motion and options, with line width and brightness following depth so strands swell as they pass the camera and the far side recedes. Each falls back to its 2D version when 3D is off — see [3D rendering](#3d-rendering) |
+| `attractor-3d`, `clifford-3d`, `bedhead-3d` | the three point-cloud maps above, rendered with three.js and turning in 3D. The maps are flat, so each point is lifted by the orbit's previous point: face-on it is exactly the 2D figure, and as it turns the sheets the map folds together pull apart. Yaw speed follows the `spin` slot (mid by default), hits whip the spin and swell the figure as well as jolting its parameters, and `accent` deepens the near side's lean toward the accent colour across the whole cloud; the cloud keeps a few frames of history that fade, so morphs dissolve instead of popping. Each falls back to its 2D version when 3D is off |
 | `harmonograph` | damped Lissajous figure; hits snap it to a new musical frequency ratio and swell the amplitude, while a signed twist rate winds and unwinds the phase |
 
 **Spaces** — native 3D worlds and volumes, built for the three.js renderer
@@ -658,6 +659,11 @@ attractor gets a 3D version with one line:
 ```js
 class Lorenz3D extends flowRibbon(Lorenz) { static id = 'lorenz-3d'; }
 ```
+
+Point-cloud maps work the same way through `pointCloud3D(Base)` in
+[src/visualizations/point-cloud-3d.js](src/visualizations/point-cloud-3d.js);
+override its `depth(px, py, x, y)` to lift a map by something other than the
+previous point's y.
 
 ## Writing a visualization
 

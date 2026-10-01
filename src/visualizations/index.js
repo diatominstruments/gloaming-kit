@@ -15,7 +15,9 @@ import { Thomas } from './thomas.js';
 import { Aizawa } from './aizawa.js';
 import { Rossler } from './rossler.js';
 import { Halvorsen } from './halvorsen.js';
-import { Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D } from './attractors-3d.js';
+import {
+  Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D, DeJong3D, Clifford3D, Bedhead3D,
+} from './attractors-3d.js';
 import { FractalCathedral } from './fractal-cathedral.js';
 import { SpectrumTerrain } from './spectrum-terrain.js';
 import { Nebula } from './nebula.js';
@@ -43,7 +45,7 @@ export const registry = new Map(
     Road, Tunnel, RollingBall, Starfield,
     Lightning, Harmonograph, BouncingText,
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
-    Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D,
+    Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D, DeJong3D, Clifford3D, Bedhead3D,
     FractalCathedral, SpectrumTerrain, Nebula, HelixCorridor, Tesseract,
     PerlinGlow, InfinityMirror, Kaleidoscope, TextGhosts, DotGrid, Moire, LightLeaks,
     Scanlines,
@@ -84,6 +86,9 @@ export const VIZ = Object.freeze({
   AIZAWA_3D: Aizawa3D.id,
   ROSSLER_3D: Rossler3D.id,
   HALVORSEN_3D: Halvorsen3D.id,
+  ATTRACTOR_3D: DeJong3D.id,
+  CLIFFORD_3D: Clifford3D.id,
+  BEDHEAD_3D: Bedhead3D.id,
   FRACTAL_CATHEDRAL: FractalCathedral.id,
   SPECTRUM_TERRAIN: SpectrumTerrain.id,
   NEBULA: Nebula.id,
