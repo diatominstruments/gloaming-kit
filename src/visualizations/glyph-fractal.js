@@ -12,6 +12,7 @@ import { interpret, interpretOption } from './glyph-interpret.js';
 import { Evolver, evolveOption } from './glyph-evolve.js';
 
 const TABLE = 4096;   // resolution of the map-picking table
+const SHAPES = ['blocks', 'pipes', 'spheres', 'diamonds', 'box'];
 
 /**
  * GlyphFractal — a fractal grown from the drawing, made of copies of itself
@@ -19,12 +20,13 @@ const TABLE = 4096;   // resolution of the map-picking table
  *
  * The drawing is first read into a handful of elements (option `interpret`;
  * see glyph-interpret.js): strung along its smoothed outline, merged into
- * blobs, or wrapped into a rosette. Each element then becomes a map that
+ * blobs, wrapped into a rosette, or taken cell by cell. Each element then becomes a map that
  * shrinks the whole figure into it — moved, turned and stretched to match —
  * and iterating the maps in random order (the chaos game) draws the one
  * figure made of copies of itself in that arrangement. Copies strung along a
  * curve curl into dragon-like filaments; a few stretched blobs grow fronds;
- * a rosette grows snowflakes. It is rebuilt every frame, so as the maps
+ * a rosette grows snowflakes; one per cell makes the drawing out of copies
+ * of the drawing, the reading that keeps it recognisable. It is rebuilt every frame, so as the maps
  * move the whole figure moves with them at every scale.
  *
  * Option `evolve` keeps the structure itself alive rather than fixed (see
@@ -43,8 +45,22 @@ const TABLE = 4096;   // resolution of the map-picking table
  *           the other, so the figure opens into a layered flower, and every
  *           copy of a copy does the same
  *   solid   the elements revolved round the vertical axis into three
- *           planes, so the figure is a 3D crystal; drawn as lit, stretched
- *           cubes nested two or three levels deep (as many as CUBES allows)
+ *           planes, so the figure is a 3D crystal, nested two or three
+ *           levels deep; every piece at the bottom is a lit model of the
+ *           drawing itself, so the drawing shows at the finest scale
+ *
+ * Option `shape` sets what that model is made of (solid only):
+ *
+ *   blocks    (default) a block per cell, grey cells smaller
+ *   pipes     tubes joining neighbouring cells — the drawing as plumbing
+ *   spheres   a ball per cell, joined to its neighbours by thin rods
+ *   diamonds  a faceted diamond per cell, joined the same way
+ *   box       a single box per piece, with no drawing in it: the drawing
+ *             shows only in how the boxes are arranged
+ *
+ * Cells join their neighbours across edges, and across corners where no
+ * edge-neighbour already links them, so diagonal strokes stay connected
+ * without a solid patch turning into a lattice of crosses.
  *
  * Elements drawn mostly in grey make dimmer copies, so they read as fainter
  * parts of the figure at every scale.
@@ -88,13 +104,15 @@ export class GlyphFractal extends ThreeVisualization {
     interpret: interpretOption('contour'),
     evolve: evolveOption('drift'),
     form: { kind: 'enum', values: ['bloom', 'solid'], default: 'bloom' },
+    shape: { kind: 'enum', values: SHAPES, default: 'blocks' },
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
   };
   // The 2D window, wearing this one's default drawing.
   static fallback = windowOf(this.options);
 
-  static CUBES = 12000;       // most cubes the solid may nest into
+  static CUBES = 12000;       // most pieces the solid may nest into
+  static TRIANGLES = 1.5e6;   // most triangles across all of them
   static REVOLVE = 3;         // solid: planes the elements are revolved into
   static PER_FRAME = 80000;   // bloom: chaos-game iterations per frame
   // Points kept: two frames. More history smears the finest copies as the
@@ -209,29 +227,45 @@ export class GlyphFractal extends ThreeVisualization {
   }
 
   /**
-   * Solid: lit cubes, the maps nested as many levels deep as CUBES allows.
-   * Revolved into 3D the figure is nearly a volume, so as points it would
-   * only ever be fog; surfaces and shading are what make it read.
+   * Solid: lit models of the drawing, the maps nested as many levels deep as
+   * the budgets allow. Revolved into 3D the figure is nearly a volume, so as
+   * points it would only ever be fog; surfaces and shading are what make it
+   * read.
    */
   buildCubes() {
     const THREE = this.THREE;
     const n = this.maps.length;
-    this.depth = Math.max(1, Math.floor(Math.log(GlyphFractal.CUBES) / Math.log(n)));
-    const count = n ** this.depth;
+    const shape = this.options.shape ?? 'blocks';
+    if (!SHAPES.includes(shape)) {
+      console.warn(`GloamingKit: glyph-fractal shape '${shape}'; expected ${SHAPES.join('|')}`);
+    }
+    this.piece = buildPiece(THREE, this.glyph, SHAPES.includes(shape) ? shape : 'blocks');
+    // The outermost copies are revolved into all the planes. With a drawing
+    // in every piece, the copies within them stay in their parent's plane:
+    // revolved again they pile into a thicket where no piece can be read.
+    // Plain boxes have nothing to read, so they revolve at every level.
+    const inner = shape === 'box' ? n : n / GlyphFractal.REVOLVE;
+    // As deep as the piece budget and the triangle budget both allow.
+    const triangles = this.piece.attributes.position.count / 3;
+    const most = Math.min(GlyphFractal.CUBES, GlyphFractal.TRIANGLES / triangles);
+    this.widths = [1, n];   // copies at each level of nesting
+    while (this.widths.at(-1) * inner <= most) this.widths.push(this.widths.at(-1) * inner);
+    this.inner = inner;
+    this.depth = this.widths.length - 1;
+    const count = this.widths[this.depth];
     // Composed transforms for each level of nesting, reused every frame.
-    this.nests = Array.from({ length: this.depth + 1 }, (_, d) => new Float32Array((n ** d) * 12));
+    this.nests = this.widths.map((w) => new Float32Array(w * 12));
     this.nests[0].set([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
 
-    const material = new THREE.MeshStandardMaterial({ metalness: 0.2, roughness: 0.35 });
+    const material = new THREE.MeshStandardMaterial({ metalness: 0.2, roughness: 0.35, vertexColors: true });
     this.glow = instanceGlow(material, 0.3);
-    // BoxGeometry(2) spans [-1, 1], the cube every map is a copy of.
-    this.cubes = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), material, count);
+    this.cubes = new THREE.InstancedMesh(this.piece, material, count);
     this.cubes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.cubes.frustumCulled = false;
     // Address colour, composed alongside the transforms: the outermost copy
     // picks the hue, each level within shifts it by a quarter as much, as
     // the point cloud's colours do. (hue, brightness) per nest.
-    this.nestTones = Array.from({ length: this.depth + 1 }, (_, d) => new Float32Array((n ** d) * 2));
+    this.nestTones = this.widths.map((w) => new Float32Array(w * 2));
     this.nestTones[0].set([0, 1]);
     this.cubes.setColorAt(0, new THREE.Color(1, 1, 1));
     this.cubes.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -248,15 +282,15 @@ export class GlyphFractal extends ThreeVisualization {
 
   /** Compose the maps `depth` levels deep into the cubes' instance matrices. */
   updateCubes() {
-    const n = this.maps.length;
     const m = this.matrices;
     for (let d = 1; d <= this.depth; d++) {
+      const n = d === 1 ? this.maps.length : this.inner;
       const parent = this.nests[d - 1];
       const out = this.nests[d];
       const parentTone = this.nestTones[d - 1];
       const outTone = this.nestTones[d];
       const hueScale = 0.25 ** (d - 1);
-      const parents = n ** (d - 1);
+      const parents = this.widths[d - 1];
       // Address (a, b) is parent a applied after map b: P ∘ M.
       for (let a = 0; a < parents; a++) {
         const p = a * 12;
@@ -285,7 +319,7 @@ export class GlyphFractal extends ThreeVisualization {
     const tone = this.nestTones[this.depth];
     let mx = 0, my = 0, mz = 0, mass = 0;
     const e = this.cubes.instanceMatrix.array;
-    const count = n ** this.depth;
+    const count = this.widths[this.depth];
     for (let i = 0; i < count; i++) {
       const s = i * 12;
       const t = i * 16;
@@ -591,4 +625,117 @@ function mul3(out, p, q) {
     out[r * 3 + 1] = p0 * q[1] + p1 * q[4] + p2 * q[7];
     out[r * 3 + 2] = p0 * q[2] + p1 * q[5] + p2 * q[8];
   }
+}
+
+/*
+ * Solid pieces ------------------------------------------------------------
+ */
+
+/**
+ * The drawing as one lit model, in the [-1, 1] frame every map is a copy of:
+ * cells laid out as the readings lay them out (aspect kept, y up), one cell
+ * deep. Grey cells are smaller and darker — the darkness rides in a vertex
+ * colour, multiplied with each piece's own colour.
+ */
+function buildPiece(THREE, glyph, shape) {
+  if (shape === 'box') return merge(THREE, [{ geometry: new THREE.BoxGeometry(2, 2, 2), shade: 1 }]);
+  const { width, height, levels } = glyph;
+  const cell = 2 / Math.max(width, height);
+  const at = (x, y) => new THREE.Vector3((x + 0.5 - width / 2) * cell, -(y + 0.5 - height / 2) * cell, 0);
+  const parts = [];
+  const place = (geometry, position, shade, rotation = null) => {
+    const matrix = new THREE.Matrix4();
+    if (rotation) matrix.makeRotationFromQuaternion(rotation);
+    matrix.setPosition(position);
+    parts.push({ geometry, matrix, shade });
+  };
+  const shadeOf = (level) => (level === levels ? 1 : 0.55);
+
+  // Links between neighbouring cells: across edges, and across corners only
+  // where neither edge-neighbour bridges them already.
+  const links = [];
+  if (shape !== 'blocks') {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const a = glyph.get(x, y);
+        if (!a) continue;
+        if (glyph.get(x + 1, y)) links.push([x, y, x + 1, y]);
+        if (glyph.get(x, y + 1)) links.push([x, y, x, y + 1]);
+        for (const dx of [-1, 1]) {
+          if (glyph.get(x + dx, y + 1) && !glyph.get(x + dx, y) && !glyph.get(x, y + 1)) {
+            links.push([x, y, x + dx, y + 1]);
+          }
+        }
+      }
+    }
+  }
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const link = (radius, segments) => {
+    for (const [x0, y0, x1, y1] of links) {
+      const a = at(x0, y0);
+      const b = at(x1, y1);
+      const along = b.clone().sub(a);
+      const length = along.length();
+      // Thinner where it reaches a grey cell.
+      const grey = glyph.get(x0, y0) !== levels || glyph.get(x1, y1) !== levels;
+      const r = radius * (grey ? 0.7 : 1);
+      const turn = new THREE.Quaternion().setFromUnitVectors(up, along.normalize());
+      place(new THREE.CylinderGeometry(r, r, length, segments, 1, true), a.add(b).multiplyScalar(0.5),
+        grey ? 0.7 : 1, turn);
+    }
+  };
+
+  for (const { x, y, level } of glyph.filled()) {
+    const full = level === levels;
+    const p = at(x, y);
+    const shade = shadeOf(level);
+    if (shape === 'blocks') {
+      const side = cell * (full ? 0.9 : 0.62);
+      place(new THREE.BoxGeometry(side, side, cell * (full ? 1 : 0.7)), p, shade);
+    } else if (shape === 'pipes') {
+      // A joint at every cell, so bends are rounded and a lone cell still
+      // shows; a little fatter than the pipe, like a fitting.
+      const r = cell * (full ? 0.2 : 0.15);
+      place(new THREE.SphereGeometry(r, 8, 4), p, shade);
+    } else if (shape === 'spheres') {
+      place(new THREE.SphereGeometry(cell * (full ? 0.36 : 0.26), 10, 6), p, shade);
+    } else {
+      // Stood on a point, a little taller than wide.
+      const g = new THREE.OctahedronGeometry(cell * (full ? 0.46 : 0.34));
+      g.scale(0.85, 1.15, 0.85);
+      place(g, p, shade);
+    }
+  }
+  if (shape === 'pipes') link(cell * 0.15, 6);
+  else if (shape === 'spheres' || shape === 'diamonds') link(cell * 0.07, 5);
+  return merge(THREE, parts);
+}
+
+/** One non-indexed geometry from parts, each moved by its matrix and given a grey shade. */
+function merge(THREE, parts) {
+  const flat = parts.map(({ geometry, matrix }) => {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry;
+    if (g !== geometry) geometry.dispose();
+    if (matrix) g.applyMatrix4(matrix);
+    return g;
+  });
+  const total = flat.reduce((sum, g) => sum + g.attributes.position.count, 0);
+  const position = new Float32Array(total * 3);
+  const normal = new Float32Array(total * 3);
+  const color = new Float32Array(total * 3);
+  let at = 0;
+  flat.forEach((g, i) => {
+    const n = g.attributes.position.count;
+    position.set(g.attributes.position.array, at * 3);
+    normal.set(g.attributes.normal.array, at * 3);
+    color.fill(parts[i].shade, at * 3, (at + n) * 3);
+    at += n;
+    g.dispose();
+  });
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  return out;
 }

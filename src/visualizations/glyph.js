@@ -213,8 +213,8 @@ export const INVADER = [
   '............',
 ];
 
-// An eye: a solid pupil inside an open ring, so the flow has an obstacle to
-// part around and a channel to pour through.
+// An eye: a solid pupil inside a broken ring, so the stencil pours one thick
+// jet ringed by a crown of thin ones.
 export const EYE = [
   '............',
   '....1111....',

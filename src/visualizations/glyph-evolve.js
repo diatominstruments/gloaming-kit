@@ -21,8 +21,8 @@ import { interpret, INTERPRETATIONS } from './glyph-interpret.js';
  *          growth front travels round it forever. Each regrowth is a
  *          mutation — a new turn and stretch — so it is never the same twice.
  *          Hits sprout the next element at once.
- *   morph  the structure flows between the three readings in turn —
- *          contour, clusters, rosette — holding each a while, elements
+ *   morph  the structure flows between the readings in turn — contour,
+ *          clusters, rosette, cells — holding each a while, elements
  *          sliding, turning and resizing into their new places, extras
  *          sprouting from or shrinking into their neighbours. Hits hurry the
  *          next change along.

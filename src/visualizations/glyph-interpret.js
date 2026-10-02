@@ -31,14 +31,19 @@
  *             from the rim (top) to the hub (bottom), and every unbroken run
  *             down a column becomes one petal pointing outward. Any drawing
  *             becomes a radial flower.
+ *   cells     the drawing taken literally: one element per filled cell, in
+ *             place, each the size of its cell (grey cells smaller). The
+ *             one reading that keeps the grid, so a copy of the figure in
+ *             every element is the drawing made of copies of the drawing —
+ *             legible at every scale, where the others are transformed.
  *
- * Every reading also normalizes: positions are fitted to the figure, and
+ * Every reading but `cells` also normalizes: positions are fitted to the figure, and
  * sizes scaled so the elements' areas add up to COVERAGE of it, with no
  * element larger than MAX_SCALE — so a copy of the figure placed in each one
  * is a contraction, as an iterated function system needs.
  */
 
-export const INTERPRETATIONS = Object.freeze(['contour', 'clusters', 'rosette']);
+export const INTERPRETATIONS = Object.freeze(['contour', 'clusters', 'rosette', 'cells']);
 
 /** The `interpret` option, with a per-visualization default. */
 export const interpretOption = (value) => Object.freeze({
@@ -382,10 +387,49 @@ function rosette(glyph) {
 }
 
 /*
+ * cells -----------------------------------------------------------------
+ */
+
+const GREY = 0.7;   // a grey cell's copy, relative to a black one's
+
+/**
+ * Not normalized: a copy of the figure scaled by one cell's share of its
+ * width and set on each cell tiles the drawing exactly, so the figure is the
+ * drawing at every level (as the Vicsek fractal is the cross). Recentred so
+ * the figure's own centre — not the grid's — sits at the origin: shifting
+ * every map's centre by (1 − s)·t moves the whole figure by t.
+ */
+function cells(glyph) {
+  const points = cellPoints(glyph);
+  if (!points.length) return [];
+  const s = 1 / Math.max(glyph.width, glyph.height);
+  const size = (p) => s * (p.black ? 1 : GREY);
+  // The figure's centre, from the cells weighted by size.
+  let tx = 0, ty = 0, mass = 0;
+  for (const p of points) {
+    const w = size(p) ** 2;
+    tx += p.x * w;
+    ty += p.y * w;
+    mass += w;
+  }
+  tx /= mass;
+  ty /= mass;
+  return points.map((p) => ({
+    x: p.x - (1 - s) * tx,
+    y: p.y - (1 - s) * ty,
+    angle: 0,
+    sx: size(p),
+    sy: size(p),
+    weight: p.weight,
+    hue: (Math.atan2(p.y - ty, p.x - tx) / (Math.PI * 2) + 1) % 1,
+  }));
+}
+
+/*
  * ------------------------------------------------------------------------
  */
 
-const READERS = { contour, clusters, rosette };
+const READERS = { contour, clusters, rosette, cells };
 
 /**
  * Read `glyph` into elements by the named interpretation (see the top of the
@@ -397,7 +441,8 @@ export function interpret(glyph, name, fallback = 'contour') {
     console.warn(`GloamingKit: glyph interpretation '${name}'; expected ${INTERPRETATIONS.join('|')}`);
     name = fallback;
   }
-  return normalize(READERS[name](glyph));
+  const elements = READERS[name](glyph);
+  return name === 'cells' ? elements : normalize(elements);
 }
 
 /** Fit centres within REACH and scale sizes to COVERAGE, capped at MAX_SCALE. */
