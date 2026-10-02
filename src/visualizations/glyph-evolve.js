@@ -29,6 +29,11 @@ import { interpret, INTERPRETATIONS } from './glyph-interpret.js';
  *   still  the reading as it is.
  *
  * `rate` (0–1, from the music) sets how fast each of them moves.
+ *
+ * Elements may also be 3D: an optional `z`, and `phi`, the turn of the
+ * element's own plane about y (see glyph-volume.js). Both ride along —
+ * drifting, sprouting and morphing with the rest — and are left alone on
+ * flat elements.
  */
 
 export const BEHAVIORS = Object.freeze(['drift', 'grow', 'morph', 'still']);
@@ -90,8 +95,12 @@ function clampScale(e) {
 }
 
 export class Evolver {
-  /** `glyph` read by `reading` (see glyph-interpret.js), evolving by `behavior`. */
-  constructor(glyph, reading, behavior) {
+  /**
+   * `glyph` read by `reading` (see glyph-interpret.js), evolving by
+   * `behavior`. `read(glyph, reading)` does the reading; a visualization
+   * that builds in 3D passes one that lifts the elements into space.
+   */
+  constructor(glyph, reading, behavior, read = interpret) {
     if (!BEHAVIORS.includes(behavior)) {
       console.warn(`GloamingKit: glyph evolve '${behavior}'; expected ${BEHAVIORS.join('|')}`);
       behavior = 'drift';
@@ -101,8 +110,8 @@ export class Evolver {
     // are ordered round the centre so each pairs with its nearest likely
     // counterpart in the next.
     this.readings = behavior === 'morph'
-      ? [reading, ...INTERPRETATIONS.filter((r) => r !== reading)].map((r) => byAngle(interpret(glyph, r)))
-      : [interpret(glyph, reading)];
+      ? [reading, ...INTERPRETATIONS.filter((r) => r !== reading)].map((r) => byAngle(read(glyph, r)))
+      : [read(glyph, reading)];
     this.count = Math.max(...this.readings.map((r) => r.length));
     this.base = pad(this.readings[0], this.count);
     this.live = this.base.map((e) => ({ ...e }));
@@ -174,6 +183,7 @@ export class Evolver {
       for (let c = 0; c < 4; c++) jolts[j + c] *= decay;
       e.x = b.x + n(0) * WANDER + jolts[j];
       e.y = b.y + n(1) * WANDER + jolts[j + 1];
+      if (b.z !== undefined) e.z = b.z + n(5) * WANDER;
       e.angle = b.angle + n(2) * TURN + jolts[j + 2];
       const stretch = Math.exp(n(3) * STRETCH + jolts[j + 3]);
       const size = Math.exp(n(4) * SWELL);
@@ -216,6 +226,8 @@ export class Evolver {
       const e = this.live[i];
       e.x = from.x + (b.x + m.dx - from.x) * g;
       e.y = from.y + (b.y + m.dy - from.y) * g;
+      if (b.z !== undefined) e.z = (from.z ?? 0) + (b.z - (from.z ?? 0)) * g;
+      if (b.phi !== undefined) e.phi = b.phi;
       e.angle = b.angle + m.turn;
       e.sx = b.sx * Math.sqrt(m.stretch) * g;
       e.sy = b.sy / Math.sqrt(m.stretch) * g;
@@ -244,6 +256,8 @@ export class Evolver {
       const e = this.live[i];
       e.x = a.x + (b.x - a.x) * t;
       e.y = a.y + (b.y - a.y) * t;
+      if (a.z !== undefined || b.z !== undefined) e.z = (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * t;
+      if (a.phi !== undefined || b.phi !== undefined) e.phi = (a.phi ?? 0) + turnTo(a.phi ?? 0, b.phi ?? 0) * t;
       e.angle = a.angle + turnTo(a.angle, b.angle) * t;
       e.sx = a.sx + (b.sx - a.sx) * t;
       e.sy = a.sy + (b.sy - a.sy) * t;

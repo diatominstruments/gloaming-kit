@@ -10,6 +10,7 @@ import { windowOf } from './glyph-window.js';
 import { Glyph, glyphOption, readGlyph, FLOWER } from './glyph.js';
 import { interpret, interpretOption } from './glyph-interpret.js';
 import { Evolver, evolveOption } from './glyph-evolve.js';
+import { buildVolume, placeNode, volumeElements, volumeOption } from './glyph-volume.js';
 
 const TABLE = 4096;   // resolution of the map-picking table
 const SHAPES = ['blocks', 'pipes', 'spheres', 'diamonds', 'box'];
@@ -58,9 +59,14 @@ const SHAPES = ['blocks', 'pipes', 'spheres', 'diamonds', 'box'];
  *   box       a single box per piece, with no drawing in it: the drawing
  *             shows only in how the boxes are arranged
  *
- * Cells join their neighbours across edges, and across corners where no
- * edge-neighbour already links them, so diagonal strokes stay connected
- * without a solid patch turning into a lattice of crosses.
+ * The model is 3D: option `volume` (solid only; see glyph-volume.js) reads
+ * the drawing as a picture of a structure — `hull` (default), the shape that
+ * looks like the drawing from the front, the side and above; `lathe`, the
+ * drawing spun about its vertical axis; or `flat`, the drawing one cell
+ * deep. With the `cells` reading the copies themselves sit at the
+ * structure's cells, so the whole figure is the structure built from
+ * copies of itself — a square ring grows the Menger sponge. The other
+ * readings are flat, and are revolved into planes as above.
  *
  * Elements drawn mostly in grey make dimmer copies, so they read as fainter
  * parts of the figure at every scale.
@@ -105,6 +111,7 @@ export class GlyphFractal extends ThreeVisualization {
     evolve: evolveOption('drift'),
     form: { kind: 'enum', values: ['bloom', 'solid'], default: 'bloom' },
     shape: { kind: 'enum', values: SHAPES, default: 'blocks' },
+    volume: volumeOption('hull'),
     palette: PALETTE_OPTION,
     distance: DISTANCE_OPTION,
   };
@@ -144,14 +151,20 @@ export class GlyphFractal extends ThreeVisualization {
     }
     this.solid = form === 'solid';
     const spec = GlyphFractal.options;
+    const volume = this.options.volume ?? spec.volume.default;
     let reading = this.options.interpret ?? spec.interpret.default;
+    if (this.solid) this.volume = buildVolume(this.glyph, volume);
+    const read = this.solid ? (glyph, r) => this.lift(r) : interpret;
     // One element is one map, whose fractal is a single point: read the
     // default drawing instead.
-    if (interpret(this.glyph, reading, spec.interpret.default).length < 2) {
+    if (read(this.glyph, reading).length < 2) {
       this.glyph = Glyph.parse(spec.glyph.default);
       reading = spec.interpret.default;
+      if (this.solid) this.volume = buildVolume(this.glyph, volume);
     }
-    this.evolver = new Evolver(this.glyph, reading, this.options.evolve ?? spec.evolve.default);
+    // Whether the first reading is revolved into planes (see lift()).
+    this.revolved = this.solid && !this.inSpace(reading);
+    this.evolver = new Evolver(this.glyph, reading, this.options.evolve ?? spec.evolve.default, read);
     this.maps = this.createMaps(this.evolver.count);
     this.scratch = [new Float64Array(9), new Float64Array(9), new Float64Array(9)];
 
@@ -239,12 +252,19 @@ export class GlyphFractal extends ThreeVisualization {
     if (!SHAPES.includes(shape)) {
       console.warn(`GloamingKit: glyph-fractal shape '${shape}'; expected ${SHAPES.join('|')}`);
     }
-    this.piece = buildPiece(THREE, this.glyph, SHAPES.includes(shape) ? shape : 'blocks');
-    // The outermost copies are revolved into all the planes. With a drawing
-    // in every piece, the copies within them stay in their parent's plane:
-    // revolved again they pile into a thicket where no piece can be read.
-    // Plain boxes have nothing to read, so they revolve at every level.
-    const inner = shape === 'box' ? n : n / GlyphFractal.REVOLVE;
+    // The finest detail that still fits one level of copies in the triangle
+    // budget: a big structure's pieces are tiny on screen anyway.
+    for (let detail = 2; detail >= 0; detail--) {
+      this.piece?.dispose();
+      this.piece = buildPiece(THREE, this.volume, SHAPES.includes(shape) ? shape : 'blocks', detail);
+      if (n * (this.piece.attributes.position.count / 3) <= GlyphFractal.TRIANGLES) break;
+    }
+    // A flat reading's outermost copies are revolved into all the planes.
+    // With a drawing in every piece, the copies within them stay in their
+    // parent's plane: revolved again they pile into a thicket where no piece
+    // can be read. Plain boxes have nothing to read, so they revolve at every
+    // level; and copies already placed in space nest all of them.
+    const inner = shape === 'box' || !this.revolved ? n : Math.round(n / GlyphFractal.REVOLVE);
     // As deep as the piece budget and the triangle budget both allow.
     const triangles = this.piece.attributes.position.count / 3;
     const most = Math.min(GlyphFractal.CUBES, GlyphFractal.TRIANGLES / triangles);
@@ -341,18 +361,30 @@ export class GlyphFractal extends ThreeVisualization {
     this.cubes.instanceColor.needsUpdate = true;
   }
 
+  /** Whether `reading` places the solid's copies in space directly. */
+  inSpace(reading) {
+    return reading === 'cells' && this.volume.mode !== 'flat';
+  }
+
   /**
-   * One map per live element — per element per plane, for the solid. The
-   * slots are fixed; placeMaps() fills them from the evolving elements.
+   * The solid's reading, in 3D. Cells read through the volume are already
+   * in space: a copy at every cell of the structure, so the figure is the
+   * structure made of copies of itself. The other readings are flat, so
+   * every element is revolved round the vertical axis into REVOLVE planes,
+   * plane by plane — the first plane's copies come first.
    */
+  lift(reading) {
+    if (this.inSpace(reading)) return volumeElements(this.volume);
+    const { REVOLVE } = GlyphFractal;
+    const flat = interpret(this.glyph, reading, GlyphFractal.options.interpret.default);
+    return Array.from({ length: REVOLVE }, (_, k) => flat.map((e) => ({
+      ...e, phi: (k / REVOLVE) * Math.PI * 2, hue: e.hue + k * 0.33,
+    }))).flat();
+  }
+
+  /** One map per live element; placeMaps() fills them as the elements evolve. */
   createMaps(count) {
-    const turns = this.solid ? GlyphFractal.REVOLVE : 1;
-    return Array.from({ length: count * turns }, (_, i) => ({
-      element: i % count,
-      // The plane this copy is revolved into, about y.
-      phi: (Math.floor(i / count) / turns) * Math.PI * 2,
-      shift: (Math.floor(i / count) / turns) * 0.33,
-    }));
+    return Array.from({ length: count }, (_, i) => ({ element: i }));
   }
 
   /** Copy this frame's live elements into the maps. */
@@ -366,6 +398,8 @@ export class GlyphFractal extends ThreeVisualization {
       const black = e.weight >= 0.5;
       map.x = e.x;
       map.y = e.y;
+      map.z = e.z ?? 0;
+      map.phi = e.phi ?? 0;
       map.angle = e.angle;
       map.sx = e.sx;
       map.sy = e.sy;
@@ -377,7 +411,7 @@ export class GlyphFractal extends ThreeVisualization {
       map.lean = Math.min(1, d / reach) * (black ? 1 : -1);   // tilt, as a fraction of the fold
       map.twist = black ? 1 : -1;
       this.dims[i] = 0.45 + 0.55 * e.weight;
-      this.hues[i] = e.hue + map.shift;
+      this.hues[i] = e.hue;
     });
   }
 
@@ -440,8 +474,7 @@ export class GlyphFractal extends ThreeVisualization {
         -sn * ay, sn * ax, c,
       ]);
       mul3(B, R, A);
-      let { x, y } = map;
-      let z = 0;
+      let { x, y, z } = map;
       if (map.phi) {
         // Revolve about y: rows 0 and 2 of B, and the centre, turn by phi.
         const cp = Math.cos(map.phi);
@@ -452,8 +485,7 @@ export class GlyphFractal extends ThreeVisualization {
           B[col] = cp * r0 + sp * r2;
           B[6 + col] = -sp * r0 + cp * r2;
         }
-        z = -sp * x;
-        x = cp * x;
+        [x, z] = [cp * x + sp * z, -sp * x + cp * z];
       }
       const j = i * 12;
       for (let k = 0; k < 9; k++) m[j + k] = B[k];
@@ -632,16 +664,17 @@ function mul3(out, p, q) {
  */
 
 /**
- * The drawing as one lit model, in the [-1, 1] frame every map is a copy of:
- * cells laid out as the readings lay them out (aspect kept, y up), one cell
- * deep. Grey cells are smaller and darker — the darkness rides in a vertex
- * colour, multiplied with each piece's own colour.
+ * The drawing's volume (see glyph-volume.js) as one lit model, in the
+ * [-1, 1] frame every map is a copy of: a solid per node, and for the joined
+ * shapes a rod or pipe per link. Grey cells are smaller and darker — the
+ * darkness rides in a vertex colour, multiplied with each piece's own colour.
+ * `detail` 2–0 trades roundness for triangles: faceted balls and joints,
+ * fewer sides to the rods, and at 0 no joints on the pipes and no rods
+ * between balls or diamonds.
  */
-function buildPiece(THREE, glyph, shape) {
+function buildPiece(THREE, volume, shape, detail = 2) {
   if (shape === 'box') return merge(THREE, [{ geometry: new THREE.BoxGeometry(2, 2, 2), shade: 1 }]);
-  const { width, height, levels } = glyph;
-  const cell = 2 / Math.max(width, height);
-  const at = (x, y) => new THREE.Vector3((x + 0.5 - width / 2) * cell, -(y + 0.5 - height / 2) * cell, 0);
+  const { cell, nodes, links } = volume;
   const parts = [];
   const place = (geometry, position, shade, rotation = null) => {
     const matrix = new THREE.Matrix4();
@@ -649,67 +682,54 @@ function buildPiece(THREE, glyph, shape) {
     matrix.setPosition(position);
     parts.push({ geometry, matrix, shade });
   };
-  const shadeOf = (level) => (level === levels ? 1 : 0.55);
-
-  // Links between neighbouring cells: across edges, and across corners only
-  // where neither edge-neighbour bridges them already.
-  const links = [];
-  if (shape !== 'blocks') {
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const a = glyph.get(x, y);
-        if (!a) continue;
-        if (glyph.get(x + 1, y)) links.push([x, y, x + 1, y]);
-        if (glyph.get(x, y + 1)) links.push([x, y, x, y + 1]);
-        for (const dx of [-1, 1]) {
-          if (glyph.get(x + dx, y + 1) && !glyph.get(x + dx, y) && !glyph.get(x, y + 1)) {
-            links.push([x, y, x + dx, y + 1]);
-          }
-        }
-      }
-    }
-  }
-
   const up = new THREE.Vector3(0, 1, 0);
-  const link = (radius, segments) => {
-    for (const [x0, y0, x1, y1] of links) {
-      const a = at(x0, y0);
-      const b = at(x1, y1);
-      const along = b.clone().sub(a);
-      const length = along.length();
-      // Thinner where it reaches a grey cell.
-      const grey = glyph.get(x0, y0) !== levels || glyph.get(x1, y1) !== levels;
-      const r = radius * (grey ? 0.7 : 1);
-      const turn = new THREE.Quaternion().setFromUnitVectors(up, along.normalize());
-      place(new THREE.CylinderGeometry(r, r, length, segments, 1, true), a.add(b).multiplyScalar(0.5),
-        grey ? 0.7 : 1, turn);
-    }
-  };
+  const where = nodes.map((n) => new THREE.Vector3(...placeNode(n)));
 
-  for (const { x, y, level } of glyph.filled()) {
-    const full = level === levels;
-    const p = at(x, y);
-    const shade = shadeOf(level);
+  nodes.forEach((n, i) => {
+    const p = where[i];
+    const full = n.black;
+    const shade = full ? 1 : 0.55;
+    // Turned with its rib, so a lathe's blocks face outward.
+    const turn = n.turn ? new THREE.Quaternion().setFromAxisAngle(up, n.turn) : null;
     if (shape === 'blocks') {
       const side = cell * (full ? 0.9 : 0.62);
-      place(new THREE.BoxGeometry(side, side, cell * (full ? 1 : 0.7)), p, shade);
+      place(new THREE.BoxGeometry(side, side, side), p, shade, turn);
     } else if (shape === 'pipes') {
       // A joint at every cell, so bends are rounded and a lone cell still
       // shows; a little fatter than the pipe, like a fitting.
       const r = cell * (full ? 0.2 : 0.15);
-      place(new THREE.SphereGeometry(r, 8, 4), p, shade);
+      if (detail > 0) place(detail === 2 ? new THREE.SphereGeometry(r, 8, 4) : new THREE.OctahedronGeometry(r), p, shade);
     } else if (shape === 'spheres') {
-      place(new THREE.SphereGeometry(cell * (full ? 0.36 : 0.26), 10, 6), p, shade);
+      place(ball(THREE, cell * (full ? 0.36 : 0.26), detail), p, shade);
     } else {
       // Stood on a point, a little taller than wide.
       const g = new THREE.OctahedronGeometry(cell * (full ? 0.46 : 0.34));
       g.scale(0.85, 1.15, 0.85);
-      place(g, p, shade);
+      place(g, p, shade, turn);
+    }
+  });
+
+  if (shape === 'pipes' || (shape !== 'blocks' && detail > 0)) {
+    const radius = cell * (shape === 'pipes' ? 0.15 : 0.07);
+    const segments = [3, 4, shape === 'pipes' ? 6 : 5][detail];
+    for (const [a, b] of links) {
+      const along = where[b].clone().sub(where[a]);
+      const length = along.length();
+      // Thinner where it reaches a grey cell.
+      const grey = !nodes[a].black || !nodes[b].black;
+      const r = radius * (grey ? 0.7 : 1);
+      const turn = new THREE.Quaternion().setFromUnitVectors(up, along.normalize());
+      place(new THREE.CylinderGeometry(r, r, length, segments, 1, true),
+        where[a].clone().add(where[b]).multiplyScalar(0.5), grey ? 0.7 : 1, turn);
     }
   }
-  if (shape === 'pipes') link(cell * 0.15, 6);
-  else if (shape === 'spheres' || shape === 'diamonds') link(cell * 0.07, 5);
   return merge(THREE, parts);
+}
+
+/** A ball of `radius`: round at detail 2, faceted below. */
+function ball(THREE, radius, detail) {
+  if (detail === 2) return new THREE.SphereGeometry(radius, 10, 6);
+  return detail === 1 ? new THREE.IcosahedronGeometry(radius) : new THREE.OctahedronGeometry(radius);
 }
 
 /** One non-indexed geometry from parts, each moved by its matrix and given a grey shade. */
