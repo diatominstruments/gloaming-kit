@@ -40,6 +40,14 @@ export class Road extends Visualization {
   static SPACING = 1.2;
   static SEGMENTS = 64;
   static SPEED = 9;     // world units per second
+  static HORIZON = 0.42;   // of the height, from the top
+
+  static options = {
+    speed:    { kind: 'number', default: Road.SPEED, min: 1, max: 30, step: 0.5 },
+    spacing:  { kind: 'number', default: Road.SPACING, min: 0.3, max: 4, step: 0.1 },
+    segments: { kind: 'number', default: Road.SEGMENTS, min: 16, max: 256, step: 8 },
+    horizon:  { kind: 'number', default: Road.HORIZON, min: 0.2, max: 0.7, step: 0.01 },
+  };
 
   // --- live rungs (tune these by eye) ---
   static LIVE_EVERY = 3;    // 1 rung in N keeps tracking the music; 0 disables
@@ -55,8 +63,12 @@ export class Road extends Visualization {
 
   constructor(opts) {
     super(opts);
+    this.speed = this.option('speed');
+    this.spacing = this.option('spacing');
+    this.segments = this.option('segments');
+    this.horizon = this.option('horizon');
     this.rungs = [];      // { z, shape: Float32Array, level, signs|null }
-    this.sinceSpawn = Road.SPACING;   // spawn one immediately
+    this.sinceSpawn = this.spacing;   // spawn one immediately
     this.spawned = 0;     // counts every rung ever spawned, for the live stride
   }
 
@@ -66,7 +78,8 @@ export class Road extends Visualization {
    * differ because each keeps its own silhouette and its own lag.
    */
   updateLive(dt) {
-    const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Road;
+    const { LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Road;
+    const SEGMENTS = this.segments;
     if (!this.rungs.some((r) => r.signs)) return;
     // Expanded once here, not per rung — every live rung reads the same instant.
     const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
@@ -80,11 +93,12 @@ export class Road extends Visualization {
   }
 
   draw(ctx, dt) {
-    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, LIVE_EVERY } = Road;
+    const { Z_NEAR, Z_FAR, LIVE_EVERY } = Road;
+    const { spacing: SPACING, segments: SEGMENTS, speed: SPEED } = this;
     const w = this.width;
     const h = this.height;
     const cx = w / 2;
-    const horizonY = h * 0.42;
+    const horizonY = h * this.horizon;
     const K = (h - horizonY) * Z_NEAR;   // projection: y = horizonY + K/z
     const W = w * 0.9 * Z_NEAR;         // road half-width in world units
 
@@ -132,6 +146,8 @@ export class Road extends Visualization {
       const amp = h * 0.16 * (Z_NEAR / rung.z) * (0.4 + rung.level * 1.2);
       const fade = Math.min(1, (Z_FAR - rung.z) / (Z_FAR * 0.25));
 
+      // A rung captured at an extreme keeps the peak colour, like its size.
+      ctx.strokeStyle = this.peak(this.style.lineColor, rung.level);
       ctx.globalAlpha *= fade;
       ctx.beginPath();
       for (let i = 0; i < SEGMENTS; i++) {

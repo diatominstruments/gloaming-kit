@@ -19,18 +19,29 @@ export class RadialBurst extends Visualization {
     core:    { kind: 'level', default: { relative: 'bass' } },
   };
 
+  static TICKS = 6;        // ticks per scatter hit, before impact adds more
+  static FADE = 1.4;       // ring fade, per second
+  static options = {
+    speed: { kind: 'number', default: 1, min: 0.25, max: 3, step: 0.05 },
+    ticks: { kind: 'number', default: RadialBurst.TICKS, min: 0, max: 30, step: 1 },
+    fade:  { kind: 'number', default: RadialBurst.FADE, min: 0.3, max: 5, step: 0.1 },
+  };
+
   constructor(opts) {
     super(opts);
-    this.rings = []; // { r, speed, life }
+    this.speed = this.option('speed');
+    this.tickCount = this.option('ticks');
+    this.fade = this.option('fade');
+    this.rings = []; // { r, speed, life, k }
     this.ticks = []; // { angle, dist, life }
   }
 
   onInput(slot, data) {
     const strength = impact(data);
     if (slot === 'ring') {
-      this.rings.push({ r: 10, speed: 220 + strength * 380, life: 1 });
+      this.rings.push({ r: 10, speed: (220 + strength * 380) * this.speed, life: 1, k: strength });
     } else if (slot === 'scatter') {
-      const count = 6 + Math.round(strength * 10);
+      const count = this.tickCount + Math.round(strength * 10);
       for (let i = 0; i < count; i++) {
         this.ticks.push({
           angle: Math.random() * Math.PI * 2,
@@ -54,8 +65,10 @@ export class RadialBurst extends Visualization {
 
     for (const ring of this.rings) {
       ring.r += ring.speed * dt;
-      ring.life -= dt * 1.4;
+      ring.life -= dt * this.fade;
       if (ring.life <= 0) continue;
+      // A ring from a hard hit is drawn in the peak colour.
+      ctx.strokeStyle = this.peak(this.style.lineColor, ring.k);
       ctx.globalAlpha *= Math.max(0, ring.life);
       ctx.beginPath();
       ctx.arc(cx, cy, ring.r, 0, Math.PI * 2);

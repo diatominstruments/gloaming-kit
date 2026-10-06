@@ -22,8 +22,23 @@ export class PolygonPulse extends Visualization {
     energy: { kind: 'level', default: { intensity: 'rms' } },
   };
 
+  static MIN_SIDES = 3;     // sides at silence
+  static SIDE_RANGE = 6;    // extra sides at full `sides`
+  static SIZE = 0.22;       // base radius, of the smaller screen dimension
+  static ECHO = 0.62;       // inner accent copy, as a fraction of the radius
+  static options = {
+    minSides:  { kind: 'number', default: PolygonPulse.MIN_SIDES, min: 3, max: 12, step: 1 },
+    sideRange: { kind: 'number', default: PolygonPulse.SIDE_RANGE, min: 0, max: 12, step: 1 },
+    size:      { kind: 'number', default: PolygonPulse.SIZE, min: 0.05, max: 0.45, step: 0.01 },
+    echo:      { kind: 'number', default: PolygonPulse.ECHO, min: 0, max: 0.95, step: 0.01 },
+  };
+
   constructor(opts) {
     super(opts);
+    this.minSides = this.option('minSides');
+    this.sideRange = this.option('sideRange');
+    this.size = this.option('size');
+    this.echo = this.option('echo');
     this.rotation = 0;
     this.spin = 0.3;     // rad/s, decays back to base after snare kicks
     this.punch = 0;      // extra radius from bass hits, decays fast
@@ -45,14 +60,17 @@ export class PolygonPulse extends Visualization {
     this.rotation += this.spin * dt;
     this.punch = Math.max(0, this.punch - dt * 3);
 
-    const sides = 3 + Math.round(this.in('sides') * 6);
-    const base = Math.min(this.width, this.height) * 0.22;
+    const sides = this.minSides + Math.round(this.in('sides') * this.sideRange);
+    const base = Math.min(this.width, this.height) * this.size;
     const depth = 0.4 + energy * 0.6;
     const r = base * (1 + this.in('swell') * 0.35 * depth + this.punch * 0.5);
 
     this.applyStyle(ctx);
-    // Concentric copies for depth: outline, then a smaller accent echo.
-    for (const [radius, color] of [[r, this.style.lineColor], [r * 0.62, this.style.accentColor ?? this.style.lineColor]]) {
+    // Concentric copies for depth: outline (peak-coloured on a hard hit),
+    // then a smaller accent echo.
+    const copies = [[r, this.peak(this.style.lineColor, this.punch)]];
+    if (this.echo > 0) copies.push([r * this.echo, this.style.accentColor ?? this.style.lineColor]);
+    for (const [radius, color] of copies) {
       ctx.strokeStyle = color;
       ctx.beginPath();
       for (let i = 0; i <= sides; i++) {

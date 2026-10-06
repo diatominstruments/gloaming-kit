@@ -53,9 +53,16 @@ export class RollingBall extends Visualization {
 
   static BACK_ALPHA = 0.22;  // far hemisphere, relative to the near one
 
+  static options = {
+    latitudes: { kind: 'number', default: RollingBall.LATITUDES, min: 1, max: 20, step: 1 },
+    meridians: { kind: 'number', default: RollingBall.MERIDIANS, min: 2, max: 32, step: 1 },
+    radius:    { kind: 'number', default: RollingBall.RADIUS, min: 0.1, max: 0.6, step: 0.01 },
+  };
+
   constructor(opts) {
     super(opts);
-    this.lines = RollingBall.buildWireframe();
+    this.radius = this.option('radius');
+    this.lines = RollingBall.buildWireframe(this.option('latitudes'), this.option('meridians'));
     // Row-major 3x3, identity. Rows are the rotated basis vectors.
     this.m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
     this.heading = 0;        // current roll direction, radians (y up)
@@ -65,8 +72,8 @@ export class RollingBall extends Visualization {
   }
 
   /** Unit-sphere polylines: latitude rings plus pole-to-pole meridians. */
-  static buildWireframe() {
-    const { LATITUDES, MERIDIANS, RESOLUTION } = RollingBall;
+  static buildWireframe(LATITUDES = RollingBall.LATITUDES, MERIDIANS = RollingBall.MERIDIANS) {
+    const { RESOLUTION } = RollingBall;
     const lines = [];
 
     for (let i = 1; i <= LATITUDES; i++) {
@@ -155,8 +162,9 @@ export class RollingBall extends Visualization {
 
   draw(ctx, dt) {
     const {
-      BASE_SPIN, SPIN_GAIN, SPIN_TAU, TURN_TAU, KICK_DECAY, RADIUS, SWELL, BACK_ALPHA,
+      BASE_SPIN, SPIN_GAIN, SPIN_TAU, TURN_TAU, KICK_DECAY, SWELL, BACK_ALPHA,
     } = RollingBall;
+    const RADIUS = this.radius;
 
     const cx = this.width / 2;
     const cy = this.height / 2;
@@ -227,9 +235,10 @@ export class RollingBall extends Visualization {
     ctx.shadowBlur = this.style.shadowBlur ?? 0;
     ctx.stroke(front);
 
-    // Silhouette, in the accent colour, brightening on a hit.
+    // Silhouette, in the accent colour, brightening on a hit and taking the
+    // peak colour on a hard one.
     ctx.globalAlpha = baseAlpha * (0.35 + this.kick * 0.5);
-    ctx.strokeStyle = this.style.accentColor ?? this.style.lineColor;
+    ctx.strokeStyle = this.peak(this.style.accentColor ?? this.style.lineColor, this.kick);
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.stroke();

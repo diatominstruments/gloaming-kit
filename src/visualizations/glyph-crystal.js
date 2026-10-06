@@ -56,6 +56,8 @@ export class GlyphCrystal extends Visualization {
     size:  { kind: 'enum', values: ['small', 'med', 'large'], default: 'med' },
     grain: { kind: 'enum', values: ['rings', 'flat'], default: 'rings' },
     edges: { kind: 'enum', values: ['smooth', 'faceted'], default: 'smooth' },
+    nucleus: { kind: 'number', default: 0.12, min: 0.03, max: 0.4, step: 0.01 },
+    hueRate: { kind: 'number', default: 0.9, min: 0, max: 3, step: 0.05 },
   };
 
   static RATE = 0.1;          // front speed, of the smaller dimension per second, at full grow
@@ -83,7 +85,9 @@ export class GlyphCrystal extends Visualization {
     super(opts);
     const G = GlyphCrystal;
     this.glyph = readGlyph(this);
-    this.size = G.SIZES[this.options.size] ? this.options.size : 'med';
+    this.size = this.option('size');
+    this.nucleus = this.option('nucleus');   // radius over which the bright core fades
+    this.hueRate = this.option('hueRate');   // hue turn per nucleus radius grown
     this.rings = this.options.grain !== 'flat';
     const faceted = this.options.edges === 'faceted';
     this.profile = radialProfile(this.glyph, faceted ? { n: 14, kappa: 10 } : { n: 72, kappa: 14 });
@@ -187,10 +191,11 @@ export class GlyphCrystal extends Visualization {
     const accent = s.accentColor ?? line;
     const bg = s.background;
     if (!this.rings) return mixColor(bg, mixColor(line, accent, 0.5 + 0.5 * Math.sin(c.phase)), c.tone);
-    const nucleus = G.NUCLEUS * Math.min(this.width, this.height);
-    const hue = 0.5 + 0.5 * Math.sin(c.phase + (r / nucleus) * G.HUE_RATE);
+    const nucleus = this.nucleus * Math.min(this.width, this.height);
+    const hue = 0.5 + 0.5 * Math.sin(c.phase + (r / nucleus) * this.hueRate);
     const bright = clamp01(G.BODY + (G.CORE - G.BODY) * Math.exp(-r / nucleus) + G.FLASH * this.flash);
-    return mixColor(bg, mixColor(line, accent, hue), bright);
+    // The band a hard hit lays is in the peak colour, and stays in the crystal.
+    return this.peak(mixColor(bg, mixColor(line, accent, hue), bright), this.flash);
   }
 
   measureCoverage(gen) {
@@ -276,7 +281,7 @@ export class GlyphCrystal extends Visualization {
       ctx.shadowBlur = this.style.shadowBlur ?? 0;
       ctx.shadowColor = this.style.shadowColor ?? this.style.accentColor ?? this.style.lineColor;
       ctx.lineWidth = Math.max(0.8, (this.style.lineWidth ?? 2) * 0.6);
-      ctx.strokeStyle = rgba(this.style.accentColor ?? this.style.lineColor, Math.min(1, alpha));
+      ctx.strokeStyle = rgba(this.peak(this.style.accentColor ?? this.style.lineColor, this.flash), Math.min(1, alpha));
       ctx.stroke(front);
       ctx.shadowBlur = 0;
     }

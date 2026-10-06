@@ -131,6 +131,10 @@ const ROTATION = {
  *
  *   rotation  'tumble' | 'spin' | 'rock' | 'off'   see ROTATION above
  *   speed     0–3, multiplier on how fast it turns (0 holds the current angle)
+ *   points    orbit points plotted per frame: the cloud's density
+ *   scale     multiplier on the system's own SCALE: how much of the screen
+ *             the figure fills
+ *   dot       size of each point, in px
  *
  *   { id: 'clifford', options: { rotation: 'rock', speed: 0.5 } }
  *
@@ -139,7 +143,9 @@ const ROTATION = {
  *
  * The `accent` slot blends the cloud from lineColor toward accentColor. By
  * default it is an envelope on bass hits, so the figure flashes on each one
- * and fades back; bind it to a band for a steady colour that follows the mix:
+ * and fades back — and past the style's `peakAbove`, on toward its
+ * `peakColor`, so only the hardest hits reach the third colour. Bind it to a
+ * band for a steady colour that follows the mix:
  *
  *   { id: 'clifford', bind: { accent: { trigger: 'snare', decay: 4 } } }
  *   { id: 'clifford', bind: { accent: { intensity: 'treble', smooth: 0.3 } } }
@@ -151,14 +157,17 @@ export class PointCloudAttractor extends AttractorBase {
     spin:   { kind: 'level', default: { intensity: 'mid' } },
   };
 
-  static options = {
-    rotation: { kind: 'enum', values: Object.keys(ROTATION), default: 'tumble' },
-    speed: { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
-  };
-
   static POINTS = 3200;
   static SEED = [0.1, 0.1];
   static DOT = 1.4;
+
+  static options = {
+    rotation: { kind: 'enum', values: Object.keys(ROTATION), default: 'tumble' },
+    speed:  { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
+    points: { kind: 'number', default: PointCloudAttractor.POINTS, min: 500, max: 20000, step: 100 },
+    scale:  { kind: 'number', default: 1, min: 0.4, max: 2.5, step: 0.05 },
+    dot:    { kind: 'number', default: PointCloudAttractor.DOT, min: 0.5, max: 4, step: 0.1 },
+  };
   static LIMIT = 1e3;   // orbit escape threshold; beyond this, reseed
 
   static FOCAL = 7;           // camera distance in world units
@@ -183,8 +192,10 @@ export class PointCloudAttractor extends AttractorBase {
     this.path = ROTATION[rotation] ?? ROTATION.tumble;
     // Off is truly flat, so it draws exactly the original 2D figure.
     this.lift = this.path === ROTATION.off ? 0 : this.constructor.DEPTH;
-    const speed = Number(this.options.speed ?? 1);
-    this.speed = Number.isFinite(speed) ? Math.max(0, speed) : 1;
+    this.speed = this.option('speed');
+    this.pointCount = this.option('points');
+    this.scale = this.constructor.SCALE * this.option('scale');
+    this.dot = this.option('dot');
 
     this.phase = 0;   // starts face-on, then turns
     this.spin = this.constructor.SPIN[0];
@@ -235,7 +246,8 @@ export class PointCloudAttractor extends AttractorBase {
   }
 
   draw(ctx, dt) {
-    const { POINTS, SCALE, SEED, DOT, LIMIT, FOCAL } = this.constructor;
+    const { SEED, LIMIT, FOCAL } = this.constructor;
+    const { pointCount: POINTS, scale: SCALE, dot: DOT } = this;
     this.advance(dt);
 
     const cx = this.width / 2;
@@ -253,8 +265,9 @@ export class PointCloudAttractor extends AttractorBase {
 
     this.applyStyle(ctx);
     ctx.shadowBlur = 0; // thousands of points — glow is unaffordable here
-    ctx.fillStyle = mixColor(
-      this.style.lineColor, this.style.accentColor ?? this.style.lineColor, this.accentMix(),
+    const mix = this.accentMix();
+    ctx.fillStyle = this.peak(
+      mixColor(this.style.lineColor, this.style.accentColor ?? this.style.lineColor, mix), mix,
     );
     const baseAlpha = ctx.globalAlpha; // preserve the engine's crossfade
     ctx.globalAlpha = baseAlpha * this.brightness();
@@ -336,6 +349,13 @@ const DISTANCE = { near: 0.15, med: 1, far: 1.6 };
  *
  *   { id: 'thomas', options: { distance: 'far' } }   // near | med | far
  *
+ * Further options shape the ribbon without touching the integration: `trail`
+ * (samples kept — how much of the attractor is drawn at once), `substeps`
+ * (samples integrated per frame — how fast the head races round), and
+ * `scale` (a multiplier on the system's own SCALE). H, H_LIMIT and the
+ * parameter bands are deliberately not options: they are measured per system
+ * for stability, and outside them the figure diverges or collapses.
+ *
  * Subclasses implement `derivative(x, y, z, p, out)`.
  */
 export class FlowAttractor extends AttractorBase {
@@ -348,7 +368,12 @@ export class FlowAttractor extends AttractorBase {
   // A getter so `this` is the subclass, and the declared default follows each
   // system's own DISTANCE rather than reporting the base's.
   static get options() {
-    return { distance: { kind: 'enum', values: Object.keys(DISTANCE), default: this.DISTANCE } };
+    return {
+      distance: { kind: 'enum', values: Object.keys(DISTANCE), default: this.DISTANCE },
+      trail:    { kind: 'number', default: this.TRAIL, min: 200, max: 6000, step: 100 },
+      substeps: { kind: 'number', default: this.SUBSTEPS, min: 4, max: 96, step: 4 },
+      scale:    { kind: 'number', default: 1, min: 0.4, max: 2.5, step: 0.05 },
+    };
   }
 
   static TRAIL = 1400;        // positions retained in the ribbon
@@ -401,8 +426,11 @@ export class FlowAttractor extends AttractorBase {
 
   constructor(opts) {
     super(opts);
+    this.trailLength = this.option('trail');
+    this.substeps = this.option('substeps');
+    this.scale = this.constructor.SCALE * this.option('scale');
     this.state = new Float64Array(this.constructor.SEED);
-    this.trail = new Float32Array(this.constructor.TRAIL * 3);
+    this.trail = new Float32Array(this.trailLength * 3);
     this.count = 0;
     this.head = 0;
     this.yaw = 0;
@@ -467,8 +495,8 @@ export class FlowAttractor extends AttractorBase {
     this.trail[i] = x;
     this.trail[i + 1] = y;
     this.trail[i + 2] = z;
-    this.head = (this.head + 1) % this.constructor.TRAIL;
-    if (this.count < this.constructor.TRAIL) this.count++;
+    this.head = (this.head + 1) % this.trailLength;
+    if (this.count < this.trailLength) this.count++;
   }
 
   /**
@@ -480,8 +508,9 @@ export class FlowAttractor extends AttractorBase {
    */
   advance(dt) {
     const {
-      SUBSTEPS, H, H_LIMIT, SPEED, SEED, SPIN, LIMIT, TWIST, KICK_SPIN, PULSE, KICK_DECAY,
+      H, H_LIMIT, SPEED, SEED, SPIN, LIMIT, TWIST, KICK_SPIN, PULSE, KICK_DECAY,
     } = this.constructor;
+    const SUBSTEPS = this.substeps;
     this.updateParams(dt);
 
     this.surge = Math.max(0, this.surge - dt * 2.5);
@@ -519,7 +548,8 @@ export class FlowAttractor extends AttractorBase {
   }
 
   draw(ctx, dt) {
-    const { TRAIL, CENTER, SCALE, CHUNKS, NEAR } = this.constructor;
+    const { CENTER, CHUNKS, NEAR } = this.constructor;
+    const { trailLength: TRAIL, scale: SCALE } = this;
     this.advance(dt);
     const { pitch, twist, swell } = this;
 
@@ -595,8 +625,9 @@ export class FlowAttractor extends AttractorBase {
       // Glow only on the leading piece; a blurred stroke costs a pass over
       // its whole bounding box, and the ribbon spans the screen.
       ctx.shadowBlur = c === CHUNKS - 1 ? glow : 0;
+      // The head is accent, and peak-coloured while a hard hit's kick lasts.
       ctx.strokeStyle = c === CHUNKS - 1
-        ? (this.style.accentColor ?? this.style.lineColor)
+        ? this.peak(this.style.accentColor ?? this.style.lineColor, this.kick)
         : this.style.lineColor;
       ctx.globalAlpha = baseAlpha * bright * age * age;
       ctx.stroke();

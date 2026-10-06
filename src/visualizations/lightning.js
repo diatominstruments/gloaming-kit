@@ -88,11 +88,23 @@ export class Lightning extends Visualization {
   static IDLE_STRIKE_SECONDS = 5;   // last-resort strike so a long quiet
                                     // passage isn't an empty screen
 
+  static FORKING = 0.10;           // base chance a vertex forks; `fork` adds more
+
+  static options = {
+    bolts:     { kind: 'number', default: Lightning.MAX_BOLTS, min: 1, max: 12, step: 1 },
+    roughness: { kind: 'number', default: Lightning.ROUGHNESS, min: 0.3, max: 0.8, step: 0.01 },
+    forking:   { kind: 'number', default: Lightning.FORKING, min: 0, max: 0.4, step: 0.01 },
+  };
+
   constructor(opts) {
     super(opts);
+    this.maxBolts = this.option('bolts');
+    this.roughness = this.option('roughness');
+    this.forking = this.option('forking');
     this.bolts = [];
     this.flicker = 0;
     this.flash = 0;
+    this.flashSize = 0;   // impact of the hit behind the current flash
     this.sinceStrike = 0;
   }
 
@@ -120,6 +132,7 @@ export class Lightning extends Visualization {
     if (slot === 'strike') {
       this.strike(size, 1);
       this.flash = Math.max(this.flash, 0.5 + size * 0.5);
+      this.flashSize = size;
     } else {
       this.strike(size, 0.55);
     }
@@ -127,12 +140,13 @@ export class Lightning extends Visualization {
 
   /** Generate one bolt's full geometry and push it onto the live list. */
   strike(strength, reach) {
-    const { MAX_BOLTS, TIERS, MAX_SEGMENTS, ROUGHNESS, PASSES } = Lightning;
+    const { TIERS, MAX_SEGMENTS, PASSES } = Lightning;
+    const { maxBolts: MAX_BOLTS, roughness: ROUGHNESS } = this;
     const w = this.width;
     const h = this.height;
 
     const jag = 0.10 + this.in('wander') * 0.16;      // displacement / length
-    const forkChance = 0.10 + this.in('fork') * 0.16;
+    const forkChance = this.forking + this.in('fork') * 0.16;
 
     // Bucketed by tier so drawing never has to filter. Each entry is one
     // polyline; points carry cumulative distance from the strike origin, which
@@ -206,7 +220,7 @@ export class Lightning extends Visualization {
     // Full-frame flash on the heaviest hits.
     if (this.flash > 0) {
       ctx.globalAlpha = baseAlpha * this.flash * 0.14;
-      ctx.fillStyle = accent;
+      ctx.fillStyle = this.peak(accent, this.flashSize);
       ctx.fillRect(0, 0, this.width, this.height);
     }
 
@@ -221,6 +235,8 @@ export class Lightning extends Visualization {
     for (const b of this.bolts) {
       const frontier = b.progress * b.maxDist;
       const bright = (b.progress < 1 ? 1 : b.life) * (0.7 + this.flicker * 0.3);
+      // The hot core and head of a bolt from a hard hit burn peak-coloured.
+      const core = this.peak(accent, b.strength);
       let headX = 0;
       let headY = 0;
 
@@ -272,7 +288,7 @@ export class Lightning extends Visualization {
         // re-stroke rather than a second path build.
         if (tier === 0) {
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = accent;
+          ctx.strokeStyle = core;
           ctx.globalAlpha = baseAlpha * bright;
           ctx.lineWidth = Math.max(0.5, width * 0.4);
           ctx.stroke();
@@ -282,8 +298,8 @@ export class Lightning extends Visualization {
       // Bright head while the bolt is still travelling.
       if (b.progress < 1) {
         ctx.shadowBlur = glow;
-        ctx.shadowColor = accent;
-        ctx.fillStyle = accent;
+        ctx.shadowColor = core;
+        ctx.fillStyle = core;
         ctx.globalAlpha = baseAlpha * bright;
         ctx.beginPath();
         ctx.arc(headX, headY, 2 + b.strength * 3, 0, Math.PI * 2);

@@ -41,6 +41,8 @@ export class TextGhosts extends Visualization {
     text:  { kind: 'string', default: TextGhosts.TEXT, maxLength: 32 },
     count: { kind: 'number', default: 24, min: 0, max: 80, step: 1 },
     seed:  { kind: 'number', default: 1, min: 0, max: 9999, step: 1 },
+    size:  { kind: 'number', default: 0.09, min: 0.03, max: 0.3, step: 0.01 },
+    field: { kind: 'number', default: 2.2, min: 0.5, max: 6, step: 0.1 },
   };
 
   static SIZE = 0.09;         // ghost font size, of the smaller dimension
@@ -62,9 +64,11 @@ export class TextGhosts extends Visualization {
 
   constructor(opts) {
     super(opts);
-    this.text = String(this.options.text ?? TextGhosts.TEXT);
-    this.noise = createNoise3D(Number(this.options.seed ?? 1) | 0);
-    const count = Math.max(0, Number(this.options.count ?? 24) | 0);
+    this.text = this.option('text');
+    this.noise = createNoise3D(this.option('seed'));
+    this.size = this.option('size');     // ghost font size, of the smaller dimension
+    this.field = this.option('field');   // drift-field noise scale: larger, smaller eddies
+    const count = this.option('count');
     const [lo, hi] = TextGhosts.SIZE_SPREAD;
     // Normalized positions, so a resize keeps the layout.
     this.ghosts = Array.from({ length: count }, () => ({
@@ -106,7 +110,7 @@ export class TextGhosts extends Visualization {
       u: stamp.u,
       v: stamp.v,
       tilt: stamp.tilt,
-      size: TextGhosts.STAMP_SIZE / TextGhosts.SIZE * (1 + TextGhosts.STAMP_SWELL),
+      size: TextGhosts.STAMP_SIZE / this.size * (1 + TextGhosts.STAMP_SWELL),
       outline: false,
     });
   }
@@ -133,8 +137,8 @@ export class TextGhosts extends Visualization {
     for (const g of this.ghosts) {
       // Flow field: noise picks a heading at the ghost's position. Moving in
       // the smaller dimension's units keeps the speed even on wide screens.
-      const nx = g.u * aspect * T.FIELD;
-      const ny = g.v * bspect * T.FIELD;
+      const nx = g.u * aspect * this.field;
+      const ny = g.v * bspect * this.field;
       const heading = noise(nx, ny, pt) * Math.PI * 2;
       g.u = wrap(g.u + (Math.cos(heading) * speed) / aspect);
       g.v = wrap(g.v + (Math.sin(heading) * speed) / bspect);
@@ -147,7 +151,7 @@ export class TextGhosts extends Visualization {
       ctx.save();
       ctx.translate(g.u * this.width, g.v * this.height);
       ctx.rotate(g.tilt);
-      ctx.font = this.font(min * T.SIZE * g.size);
+      ctx.font = this.font(min * this.size * g.size);
       ctx.globalAlpha = base * alpha;
       if (g.outline) {
         ctx.strokeStyle = this.style.lineColor;
@@ -177,7 +181,7 @@ export class TextGhosts extends Visualization {
       ctx.shadowColor = this.style.shadowColor ?? this.style.lineColor;
       ctx.fillStyle = this.style.lineColor;
       ctx.fillText(this.text, 0, 0);
-      ctx.strokeStyle = rgba(this.style.accentColor ?? this.style.lineColor, k);
+      ctx.strokeStyle = rgba(this.peak(this.style.accentColor ?? this.style.lineColor, s.strength), k);
       ctx.lineWidth = 1.5;
       ctx.strokeText(this.text, 0, 0);
       ctx.restore();

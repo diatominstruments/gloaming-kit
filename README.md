@@ -2,8 +2,8 @@
 
 A small framework for building music visualizations with Canvas 2D and the
 WebAudio API. A song plays in the browser, an analyzer emits per-frame band
-energies and adaptive trigger events (bass hits, snare, hihat), and a
-timeline decides which visualizations are on screen for each time window of
+energies and adaptive trigger events (drum hits by band, transients, loud
+and quiet passages), and a timeline decides which visualizations are on screen for each time window of
 the song — how each one is wired to the audio, and what palette it wears.
 
 No runtime dependencies — plain ES modules, with esbuild as the only dev
@@ -91,9 +91,10 @@ SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visu
   energies (`subBass`, `bass`, `lowMid`, `mid`, `highMid`, `treble`, each
   0–1), overall `level`, per-band `relative` and `intensity` (see
   [Dynamics](#dynamics)), and the raw `spectrum`/`waveform` arrays.
-  Configured triggers fire `trigger:<name>` events when a band jumps out of
-  its recent dynamics, with a cooldown, a relative 0–1 `strength` and an
-  absolute 0–1 `intensity`.
+  Configured triggers fire `trigger:<name>` events when what they measure —
+  a band, spectral flux, overall loudness — jumps out of its recent dynamics
+  (or, for a lull, drops away), with a cooldown, a relative 0–1 `strength`
+  and an absolute 0–1 `intensity`. See [Triggers](#triggers).
 - **Timeline** ([src/timeline.js](src/timeline.js)) — maps song time to the
   active visualizations, each with an optional routing override and an
   optional per-window style. Windows may overlap (union wins).
@@ -119,6 +120,8 @@ const viz = new GloamingKit({
     background: '#0a0a12',
     lineColor: '#7fffd4',
     accentColor: '#ff5d8f',
+    peakColor: '#ffffff',  // optional third colour, shown only at extremes
+    peakAbove: 0.8,        // how extreme: the hit impact where it starts to show
     lineWidth: 2,
     shadowBlur: 14,        // glow; shadowColor defaults to lineColor
   },
@@ -139,11 +142,11 @@ const viz = new GloamingKit({
     },
   ],
   styleFade: 0.3,   // optional; seconds, time constant for style transitions
-  // optional — these are the defaults:
+  // optional — defaults to DEFAULT_TRIGGERS (see Triggers below):
   triggers: [
     { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.6, cooldown: 0.15 },
     { name: TRIGGER.SNARE, band: [1500, 4000],  threshold: 0.7, cooldown: 0.15 },
-    { name: TRIGGER.HIHAT, band: [8000, 14000], threshold: 0.4, cooldown: 0.08 },
+    { name: TRIGGER.ONSET, kind: 'onset', threshold: 0.6, cooldown: 0.1 },
   ],
 });
 
@@ -188,6 +191,65 @@ Each hit carries both numbers, which answer different questions: `strength`
 `impact(hit)` (exported from the library) combines them — strength scaled by
 intensity, with a floor so quiet hits shrink rather than vanish — and is what
 the built-in visualizations use to size their responses.
+
+## Triggers
+
+Nine triggers ship in `DEFAULT_TRIGGERS`, all named in `TRIGGER`:
+
+| name | kind | listens to | fires on |
+|------|------|------------|----------|
+| `sub` | band | 20–60 Hz | sub-bass drops, 808 tails |
+| `bass` | band | 40–130 Hz | kick drums |
+| `tom` | band | 150–400 Hz | toms, low-mid stabs |
+| `snare` | band | 1.5–4 kHz | snares |
+| `clap` | band | 4–8 kHz | claps, rimshots, the snare's crack |
+| `hihat` | band | 8–14 kHz | hats, shakers |
+| `onset` | onset | the whole spectrum | any transient, wherever it lands |
+| `loud` | rms | overall loudness | a jump in the whole mix, only once it's already loud (`minIntensity: 0.6`) |
+| `lull` | lull | overall loudness | once, when the song drops into a quiet passage |
+
+A trigger is a plain object; every field but `name` is optional:
+
+```js
+{
+  name: 'riser',
+  kind: 'band',          // 'band' | 'onset' | 'rms' | 'lull'
+  band: [4000, 12000],   // Hz; needed for 'band', optional for 'onset' and 'lull'
+  threshold: 0.6,        // 0–1, relative (see Dynamics)
+  cooldown: 0.15,        // seconds between hits
+  hold: 0.5,             // seconds it must stay over threshold before firing
+  minIntensity: 0.5,     // 0–1; only fire once the source is at least this loud
+  rearm: 0.5,            // fall back under threshold × rearm before firing again
+}
+```
+
+The kinds measure different things and share everything else:
+
+- **`band`** — energy in `band`. The default, and the drum triggers above.
+- **`onset`** — spectral flux over `band` (the whole spectrum if left out):
+  how much the spectrum *rose* since the last frame, counting only bins that
+  got louder. A transient lifts many bins at once and a sustained tone lifts
+  none, so it fires on hits however they are voiced and never on a held
+  pad, however loud. Its `intensity` is the band's ordinary loudness.
+- **`rms`** — overall loudness from the time-domain signal: a hit in the
+  mix as a whole.
+- **`lull`** — the inverse: fires once when the source's slow `intensity`
+  (its band, or overall loudness without one) falls under `threshold`
+  after having been above it, then waits for the song to come back up
+  before it can fire again. Its `strength` is the size of the drop from the
+  loudest point before it, so a breakdown out of a loud chorus hits harder
+  than a fade. Intensity is smoothed, so it lands a few seconds into the
+  quiet.
+
+`hold` turns a hit detector into a sustain detector — a swell, a riser, a
+chord that stays — and `minIntensity` keeps a trigger to the loud parts of a
+song without changing what counts as a hit within them. Each hit reports its
+`kind` alongside `strength` and `intensity`.
+
+Any of these can drive any event slot, and through an envelope any level
+slot, so `bind: { ring: 'onset', scatter: 'clap' }` or
+`{ trigger: 'lull', decay: 0.3 }` are as valid as the drum names.
+`setTriggers()` replaces the set at runtime.
 
 ## Audio sources
 
@@ -264,10 +326,9 @@ Grouped here by the categories the library reports through `catalog()` (see
 | `text` | a string drifting around the screen and reflecting off the edges; each time `bounce` rises past a threshold it turns onto a new heading with a pop. Takes `text` and `threshold` options |
 
 **Motion** — perspective visuals that put the viewer in motion. Travel
-speed is a fixed constant in all three (tune it via the class's `SPEED`
-static): audio-driven speed makes the approach visibly stutter, because
-loudness swings frame to frame. The sound shapes what you fly past, not how
-fast you fly.
+speed is constant in all three (set it with the `speed` option): audio-driven
+speed makes the approach visibly stutter, because loudness swings frame to
+frame. The sound shapes what you fly past, not how fast you fly.
 
 | id | what it does |
 |----|--------------|
@@ -312,7 +373,7 @@ each loop, so passes come in from different directions.
 
 | id | what it does | falls back to |
 |----|--------------|---------------|
-| `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and kick the deformation; the `warp` input (bass by default — rebind it to tie the walls to another band) sets how deformed the walls are, mid how fast the deformation cycles, treble lights the haze. Options: `speed` (`slow`, `med`, `fast`), `deform` (`twist` wrings each cell, `ripple` makes walls flow like liquid, `breathe` opens and closes the holes at every scale until walls thin to lace), `deformAmount` (`off`, `low`, `med`, `high`). Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
+| `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and kick the deformation; the `warp` input (bass by default — rebind it to tie the walls to another band) sets how deformed the walls are, mid how fast the deformation cycles, treble lights the haze. Options: `speed` (0.1–1.5; the old names `slow`, `med`, `fast` still work), `deform` (`twist` wrings each cell, `ripple` makes walls flow like liquid, `breathe` opens and closes the holes at every scale until walls thin to lace), `deformAmount` (0–2.5; or `off`, `low`, `med`, `high`). Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
 | `spectrum-terrain` | low flight along a valley made of the song's history: rows laid at the horizon from the live spectrum scroll toward the camera, treble rippling the floor and bass heaving the canyon walls, over noise ridges. Hits roll waves of light out to the horizon; the sky is left transparent for a background layer to fill | `road` |
 | `nebula` | a cloud of 150k motes (option `count`), watched from `distance`; motes swell and soften with nearness, so the close pass of `orbit` skims through blurred structure. Option `shape`: `spiral` (default) and `barred` galaxies (with `arms`, 1–6), `ring` (a core inside a detached ring), `vortex` (a whirlpool spiralling down a funnel into a drain), `quasar` (a thin disc firing two corkscrewing jets from its poles), `shell` (a planetary nebula's hourglass lobes round a hot star). Bands of colour flow outward through it at a rate, and brightness, set by the `color` input — upper mids by default, rebindable to any band. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns it, treble sparkles | `particles` |
 | `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
@@ -462,6 +523,12 @@ falls back to its own statics for the rest. Like `bind`, an entry carrying
 `options` is a distinct instance, so the same attractor can be on screen twice
 at two different distances.
 
+Structural settings — counts, sizes, speeds, densities, spacing — are
+options rather than constants wherever changing them makes a different
+picture, so an editor can offer them as sliders (see
+[Options by visualization](#options-by-visualization)). A changed option is
+a new instance that crossfades in, so they are read once, at construction.
+
 A visualization declares the options it reads in `static options`, so editors
 can offer them. Each is an object with a `kind` and a `default`: `'enum'`
 (with `values`), `'string'` (optional `maxLength`), `'number'` (optional
@@ -476,6 +543,52 @@ static options = {
   threshold: { kind: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
 };
 ```
+
+Read one with `this.option(name)`. It checks the value against its
+declaration and falls back to the default: numbers are clamped to
+`min`–`max` and rounded to an integer `step`, enums must be one of `values`,
+strings are cut to `maxLength`, and anything unreadable gives the default.
+
+### Options by visualization
+
+Numbers show their default and slider range. The 3D attractors take their 2D
+parent's options, and a 3D visualization drawn as its 2D fallback passes its
+options on, so names they share carry over.
+
+| id | options |
+|----|---------|
+| `eq-bars` | `bars` 28 (8–96), `gap` 4 (0–12) |
+| `waveform` | `gain` 1 (0.25–3) |
+| `radial-burst` | `speed` 1 (0.25–3), `ticks` 6 (0–30), `fade` 1.4 (0.3–5) |
+| `polygon-pulse` | `minSides` 3 (3–12), `sideRange` 6 (0–12), `size` 0.22 (0.05–0.45), `echo` 0.62 (0–0.95) |
+| `particles` | `count` 110 (20–600), `size` 1 (0.3–4), `trail` 0.07 (0–0.3) |
+| `road` | `speed` 9 (1–30), `spacing` 1.2 (0.3–4), `segments` 64 (16–256), `horizon` 0.42 (0.2–0.7) |
+| `tunnel` | `speed` 0.75 (0.1–3), `spacing` 0.34 (0.1–1), `segments` 48 (8–128) |
+| `rolling-ball` | `latitudes` 7 (1–20), `meridians` 12 (2–32), `radius` 0.3 (0.1–0.6) |
+| `starfield` | `count` 240 (50–1500), `speed` 0.5 (0.1–3) |
+| `lightning` | `bolts` 6 (1–12), `roughness` 0.55 (0.3–0.8), `forking` 0.1 (0–0.4) |
+| `harmonograph` | `damping` 0.12 (0–0.5), `loops` 5 (2–12) |
+| `text` | `text`, `threshold` 0.6 (0–1), `size` 0.12 (0.03–0.4) |
+| `attractor`, `clifford`, `bedhead` (and `-3d`) | `rotation`, `speed` 1 (0–3), `points` 3200 (500–20000), `scale` 1 (0.4–2.5), `dot` 1.4 (0.5–4) |
+| `thomas`, `aizawa`, `rossler`, `halvorsen` (and `-3d`) | `distance`, `trail` 1400 (200–6000), `substeps` 32 (4–96), `scale` 1 (0.4–2.5) |
+| `fractal-cathedral` | `palette`, `speed` 0.55 (0.1–1.5), `deform`, `deformAmount` 1 (0–2.5) |
+| `spectrum-terrain` | `palette`, `speed` 11 (2–30), `height` 7.5 (1–20), `mountains` 7 (0–20) |
+| `nebula` | `palette`, `distance`, `shape`, `arms` 3 (1–6), `count` 150000 (10000–400000), `size` 1 (0.3–3), `swirl` 1 (0–3) |
+| `helix-corridor` | `palette`, `shape`, `strands` 4 (1–8), `density` 150 (30–400), `radius` 2.4 (0.8–6), `twist` 0.32 (0–1.5), `size` 0.24 (0.05–0.8), `speed` 9 (1–30) |
+| `tesseract` | `palette`, `shape`, `distance`, `wDistance` 2.2 (1.3–5), `tube` 0.028 (0.005–0.08), `bead` 0.065 (0.01–0.15) |
+| `glyph-current` | `glyph`, `count` 2200 (200–6000), `scale` 1 (0.4–3), `seed`, `trail` 1.6 (0.2–6) |
+| `glyph-crystal` | `glyph`, `size`, `grain`, `edges`, `nucleus` 0.12 (0.03–0.4), `hueRate` 0.9 (0–3) |
+| `glyph-dendrite` | `glyph`, `spread`, `from`, `seed`, `width` 1.8 (0.5–5), `wander` 1 (0–3) |
+| `glyph-reaction` | `glyph`, `regime`, `scale` 1 (0.4–3), `seeds` 10 (1–40) |
+| `glyph-cymatics` | `glyph`, `render`, `scale` 1 (0.3–3), `nodeWidth` 0.16 (0.05–0.5), `terraces` 5 (2–12) |
+| `perlin-glow` | `react`, `scale` 1 (0.25–4), `seed`, `octaves` 3 (1–5), `warp` 0.9 (0–3) |
+| `infinity-mirror` | `shape`, `shrink` 0.9 (0.7–0.98), `margin` 0.06 (0–0.3) |
+| `kaleidoscope` | `segments`, `zoom` 0.94 (0.8–1.05) |
+| `text-ghosts` | `text`, `count` 24 (0–80), `seed`, `size` 0.09 (0.03–0.3), `field` 2.2 (0.5–6) |
+| `dot-grid` | `mode`, `spacing` 26 (10–80), `field` 3 (0.5–10), `maxSize` 0.42 (0.1–0.5), `seed` |
+| `moire` | `pattern`, `spacing` 9 (4–30), `alpha` 0.28 (0.05–1) |
+| `light-leaks` | `discs` 14 (0–60), `leaks` 2 (0–6), `seed` |
+| `scanlines` | `strength` 0.5 (0–1), `pitch` 3 (2–10), `vignette` 0.7 (0–1) |
 
 ### Bouncing text
 
@@ -553,8 +666,10 @@ is a suggestion — each visualization fits whatever drawing it is given, up
 to 32 cells a side — and an empty or unreadable drawing falls back to the
 visualization's own default, so there is always something on screen.
 
-The demo's timeline editor shows a grid editor under any checked
-visualization with a `grid` option: click to step a cell's strength, drag to
+The demo's timeline editor shows an editor for every option a checked
+visualization declares, built from `describe()`: a select per enum, a slider
+per number, a text box per string, and for a `grid` option a grid editor:
+click to step a cell's strength, drag to
 paint, shift- or right-click to erase, with left–right and top–bottom
 mirroring (any scribble mirrored both ways looks intentional). It hands the
 drawing over on release rather than per cell, since a changed option is a new
@@ -679,6 +794,31 @@ rather than gliding, so scrubbing across sections doesn't smear.
 Style is global: everything on screen shares one palette, so simultaneous
 visualizations can't be styled apart.
 
+### Peak colour
+
+`lineColor` and `accentColor` are always on screen; `peakColor` is a third
+colour that only shows at the extremes of the sound. Almost every
+visualization pushes some part of itself toward it as a hit's `impact` (or a level slot)
+rises past `peakAbove`, reaching it at 1: radial-burst rings from the
+hardest kicks, the attractors' cloud on the biggest jolts, the brightest
+nodal lines of `glyph-cymatics`, a tesseract's beads, the crest of a
+helix-corridor swell. Lower `peakAbove` and it shows more often; raise it
+and only the heaviest hits reach it.
+
+```js
+style: { lineColor: '#7fffd4', accentColor: '#ff5d8f', peakColor: '#ffffff', peakAbove: 0.75 }
+```
+
+It is off by default (`peakColor: null`), and with it off every
+visualization draws exactly what it drew before it existed. It eases between
+window styles like any other colour, and snaps on when a window first sets it.
+
+A custom visualization opts in with `this.peak(base, level)`, which returns
+`base` pushed toward the peak colour by how far `level` is past
+`peakAbove`, or `base` unchanged; `this.peakAmount(level)` gives the 0–1
+blend itself. In 3D, the palette GLSL has a matching `peak(color, level)`,
+and `peakTint(viz, color, level)` in three-shared.js tints a `THREE.Color`.
+
 ## 3D rendering
 
 Some visualizations render with three.js (`renderer: '3d'` in `describe()`).
@@ -757,7 +897,8 @@ allocates on the GPU should be released in `dispose()`.
 
 [src/visualizations/three-shared.js](src/visualizations/three-shared.js) has
 the pieces the Spaces visualizations share: the `palette` option with matching
-GLSL and JS versions of the palette, `instanceGlow()` to make a lit instanced
+GLSL and JS versions of the palette (and of the peak colour: `peak()` in GLSL,
+`peakTint()` in JS), `instanceGlow()` to make a lit instanced
 material glow in each instance's own colour, `fogToAlpha()` so fog fades
 distant geometry to transparent instead of painting a wall of fog colour over
 the layers beneath, and `logSpectrum()`.
@@ -781,7 +922,7 @@ previous point's y.
 ## Writing a visualization
 
 ```js
-import { Visualization, TRIGGER, register } from './src/engine.js';
+import { Visualization, TRIGGER, register, impact } from './src/engine.js';
 
 class Strobe extends Visualization {
   static id = 'strobe';
@@ -791,11 +932,21 @@ class Strobe extends Visualization {
     tint: { kind: 'level', default: { band: 'treble', smooth: 0.1 } },
   };
 
-  onInput(slot, { strength }) { this.flash = strength; }
+  static options = {
+    decay: { kind: 'number', default: 4, min: 0.5, max: 12, step: 0.5 },
+  };
+
+  constructor(opts) {
+    super(opts);
+    this.decay = this.option('decay');   // validated, clamped, or the default
+  }
+
+  onInput(slot, data) { this.flash = data.strength; this.hit = impact(data); }
 
   draw(ctx, dt) {
-    this.flash = Math.max(0, (this.flash ?? 0) - dt * 4);
+    this.flash = Math.max(0, (this.flash ?? 0) - dt * this.decay);
     this.applyStyle(ctx);        // strokeStyle/fillStyle/lineWidth/shadow from style
+    ctx.fillStyle = this.peak(this.style.lineColor, this.hit ?? 0);   // peak colour on hard hits
     ctx.globalAlpha *= this.flash * (0.5 + this.in('tint'));
     ctx.fillRect(0, 0, this.width, this.height);
   }

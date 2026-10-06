@@ -33,6 +33,8 @@ export class Scanlines extends Visualization {
   };
   static options = {
     strength: { kind: 'number', default: 0.5, min: 0, max: 1, step: 0.05 },
+    pitch:    { kind: 'number', default: 3, min: 2, max: 10, step: 1 },
+    vignette: { kind: 'number', default: 0.7, min: 0, max: 1, step: 0.05 },
   };
 
   static PITCH = 3;           // px per scanline
@@ -49,7 +51,9 @@ export class Scanlines extends Visualization {
 
   constructor(opts) {
     super(opts);
-    this.strength = clamp01(Number(this.options.strength ?? 0.5));
+    this.strength = this.option('strength');
+    this.pitch = this.option('pitch');         // px per scanline
+    this.vignette = this.option('vignette');   // edge darkness at full strength
     this.split = 0;
     this.crawl = 0;
     this.rolls = [];          // { y (0..1 of height, bar centre), strength }
@@ -69,7 +73,7 @@ export class Scanlines extends Visualization {
     if (this.patternCtx === ctx) return this.pattern;
     const tile = document.createElement('canvas');
     tile.width = 1;
-    tile.height = Scanlines.PITCH;
+    tile.height = this.pitch;
     const t = tile.getContext('2d');
     t.fillStyle = '#000';
     t.fillRect(0, 0, 1, 1);
@@ -119,7 +123,7 @@ export class Scanlines extends Visualization {
     const k = this.strength;
     if (k <= 0) return;
     this.split = approach(this.split, clamp01(this.in('split')), S.SPLIT_TAU, dt);
-    this.crawl = (this.crawl + S.CRAWL * dt) % S.PITCH;
+    this.crawl = (this.crawl + S.CRAWL * dt) % this.pitch;
     for (const r of this.rolls) r.y += S.ROLL_SPEED * dt;
     this.rolls = this.rolls.filter((r) => r.y < 1 + S.ROLL_HEIGHT);
     const roll = this.rolls.reduce((m, r) => Math.max(m, r.strength), 0);
@@ -134,7 +138,7 @@ export class Scanlines extends Visualization {
       const y = r.y * this.height;
       const half = (S.ROLL_HEIGHT * this.height) / 2;
       const g = ctx.createLinearGradient(0, y - half, 0, y + half);
-      const color = this.style.lineColor;
+      const color = this.peak(this.style.lineColor, r.strength);
       g.addColorStop(0, rgba(color, 0));
       g.addColorStop(0.5, rgba(color, S.ROLL_ALPHA * r.strength * (0.5 + k)));
       g.addColorStop(1, rgba(color, 0));
@@ -149,14 +153,14 @@ export class Scanlines extends Visualization {
     ctx.globalAlpha = base * S.LINE_DARK * k;
     ctx.translate(0, this.crawl);
     ctx.fillStyle = this.linePattern(ctx);
-    ctx.fillRect(0, -S.PITCH, this.width, this.height + S.PITCH);
+    ctx.fillRect(0, -this.pitch, this.width, this.height + this.pitch);
     ctx.restore();
 
     const cx = this.width / 2;
     const cy = this.height / 2;
     const v = ctx.createRadialGradient(cx, cy, Math.min(cx, cy) * 0.6, cx, cy, Math.hypot(cx, cy));
     v.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    v.addColorStop(1, `rgba(0, 0, 0, ${S.VIGNETTE * k})`);
+    v.addColorStop(1, `rgba(0, 0, 0, ${this.vignette * k})`);
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, this.width, this.height);
   }

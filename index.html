@@ -71,10 +71,19 @@
     .tl-remove { float: right; padding: 2px 8px; font-size: 12px; }
     .glyph-label { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
     .glyph-choice { margin-bottom: 4px; }
-    .glyph-choice select {
+    .glyph-choice select, .opt-text {
       background: var(--bg); color: var(--text); border: 1px solid #333344;
       border-radius: 4px; padding: 2px 4px; font-size: 12px;
     }
+    .glyph-choice label { font-size: 12px; }
+    .glyph-choice input[type="range"] { flex: 1.4; min-width: 0; }
+    .opt-text { flex: 1.4; min-width: 0; }
+    .opt-value { width: 44px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .trig-row { margin-bottom: 4px; }
+    .trig-row label { color: var(--text); font-size: 13px; }
+    .trig-row input[type="range"] { flex: 1.4; min-width: 0; }
+    .trig-dot { width: 8px; height: 8px; border-radius: 50%; background: #333344; flex: none; transition: background 0.1s; }
+    .trig-dot.lit { background: var(--accent); }
     .glyph-editor canvas { display: block; cursor: crosshair; touch-action: none; border-radius: 4px; }
     .glyph-tools { display: flex; gap: 4px; margin-top: 4px; }
     .glyph-tools button { padding: 2px 8px; font-size: 12px; }
@@ -107,9 +116,14 @@
     <div class="row"><label for="st-bg">Background</label><input id="st-bg" type="color" value="#0a0a12"></div>
     <div class="row"><label for="st-line">Line color</label><input id="st-line" type="color" value="#7fffd4"></div>
     <div class="row"><label for="st-accent">Accent color</label><input id="st-accent" type="color" value="#ff5d8f"></div>
+    <div class="row"><label for="st-peak">Peak color</label><input id="st-peak-on" type="checkbox" checked title="Show the peak colour on extreme hits"><input id="st-peak" type="color" value="#ffffff"></div>
+    <div class="row"><label for="st-peak-above">Peak above</label><input id="st-peak-above" type="range" min="0.5" max="0.99" step="0.01" value="0.8"></div>
     <div class="row"><label for="st-width">Line width</label><input id="st-width" type="range" min="1" max="8" step="0.5" value="2"></div>
     <div class="row"><label for="st-glow">Glow</label><input id="st-glow" type="range" min="0" max="40" step="1" value="14"></div>
     <div class="row"><label for="st-3d">3D rendering</label><input id="st-3d" type="checkbox" checked></div>
+
+    <h2>Triggers</h2>
+    <div id="triggers"></div>
 
     <h2>Timeline</h2>
     <div id="timeline"></div>

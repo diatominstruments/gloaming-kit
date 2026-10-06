@@ -1,4 +1,5 @@
 import { compileLevel } from '../signals.js';
+import { peakMix, peakAmount } from '../style.js';
 
 export { approach, clamp01, impact } from '../util.js';
 
@@ -45,6 +46,18 @@ export { approach, clamp01, impact } from '../util.js';
  *
  * A fourth kind, 'grid', is a drawing for an editor to offer as a canvas of
  * cells; see glyph.js.
+ *
+ * Read a declared option with `this.option(name)`, which validates the value
+ * against its declaration and falls back to the default. Reading them once
+ * in the constructor is the norm: a changed option is a new instance (the
+ * timeline keys entries by their options), so nothing has to track changes.
+ *
+ * Colour at extremes: the style carries a `peakColor` that shows only when
+ * the sound peaks — a hit's `impact()` near 1, a level near 1. Draw it with
+ * `this.peak(base, level)`, which pushes `base` toward it as `level` rises
+ * past `style.peakAbove`, and leaves `base` alone below. With no `peakColor`
+ * set (the default) it returns `base` unchanged, so nothing looks different
+ * until an app opts in.
  *
  * Descriptive metadata, all optional, for pickers and editors (see describe()
  * and catalog() in index.js, which read it):
@@ -108,6 +121,51 @@ export class Visualization {
   /** Current value of a level input slot. */
   in(slot) {
     return this.levels[slot] ?? 0;
+  }
+
+  /**
+   * A declared option's value: the instance's if it is valid for the
+   * declaration, else the declared default. Numbers are clamped to
+   * `min`/`max` and snapped to an integer `step`; enums must be one of
+   * `values`; strings are cut to `maxLength`. Undeclared names read as given.
+   */
+  option(name) {
+    const spec = this.constructor.options?.[name];
+    const value = this.options[name];
+    if (!spec) return value;
+    if (Array.isArray(spec)) return spec.includes(value) ? value : spec[0];
+    switch (spec.kind) {
+      case 'number': {
+        let n = Number(value);
+        if (value == null || value === '' || !Number.isFinite(n)) n = spec.default;
+        if (spec.min !== undefined) n = Math.max(spec.min, n);
+        if (spec.max !== undefined) n = Math.min(spec.max, n);
+        if (Number.isInteger(spec.step) && spec.step > 0) n = Math.round(n / spec.step) * spec.step;
+        return n;
+      }
+      case 'enum':
+        return spec.values?.includes(value) ? value : (spec.default ?? spec.values?.[0]);
+      case 'string': {
+        const str = value == null ? spec.default : String(value);
+        return spec.maxLength ? String(str).slice(0, spec.maxLength) : str;
+      }
+      default:
+        return value === undefined ? spec.default : value;
+    }
+  }
+
+  /**
+   * `base` pushed toward the style's peak colour as `level` (0..1) rises past
+   * `style.peakAbove`; `base` itself below that. For the extremes: a hit's
+   * `impact()`, a level near 1.
+   */
+  peak(base, level) {
+    return peakMix(this.style, base, level);
+  }
+
+  /** How far toward the peak colour `level` reaches, 0..1; see peak(). */
+  peakAmount(level) {
+    return peakAmount(this.style, level);
   }
 
   onInput(slot, data) {}

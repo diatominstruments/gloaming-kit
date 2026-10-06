@@ -25,6 +25,7 @@ import { CATEGORY } from './categories.js';
  * Options:
  *   text       the string to draw (default 'GLOAMING')
  *   threshold  level at which `bounce` turns the text (default 0.6)
+ *   size       font size, of the smaller screen dimension (default 0.12)
  */
 export class BouncingText extends Visualization {
   static id = 'text';
@@ -38,14 +39,15 @@ export class BouncingText extends Visualization {
 
   static TEXT = 'GLOAMING';
   static THRESHOLD = 0.6;
+  static SIZE = 0.12;        // font size, of the smaller screen dimension
   static options = {
     text:      { kind: 'string', default: BouncingText.TEXT, maxLength: 32 },
     threshold: { kind: 'number', default: BouncingText.THRESHOLD, min: 0, max: 1, step: 0.01 },
+    size:      { kind: 'number', default: BouncingText.SIZE, min: 0.03, max: 0.4, step: 0.01 },
   };
   static DIP = 0.12;         // drop below the post-turn peak that re-arms it
   static MIN_GAP = 0.3;      // seconds; shortest time between turns
 
-  static SIZE = 0.12;        // font size, of the smaller screen dimension
   static BASE_SPEED = 0.12;  // of the screen diagonal per second, at silence
   static SPEED_GAIN = 0.35;  // extra at full `speed`
   static SPEED_TAU = 0.4;    // speed is smoothed so loudness swings don't stutter
@@ -56,12 +58,14 @@ export class BouncingText extends Visualization {
 
   constructor(opts) {
     super(opts);
-    this.text = String(this.options.text ?? BouncingText.TEXT);
-    this.threshold = this.options.threshold ?? BouncingText.THRESHOLD;
+    this.text = this.option('text');
+    this.threshold = this.option('threshold');
+    this.size = this.option('size');
     this.armed = true;
-    this.peak = 0;           // highest `bounce` level since the last turn
+    this.highest = 0;        // highest `bounce` level since the last turn
     this.sinceTurn = Infinity;
     this.pop = 0;
+    this.popLevel = 0;       // the level that caused the last turn
     this.speed = BouncingText.BASE_SPEED;
 
     // Normalized position (0..1 of the free area) so a resize keeps it in frame.
@@ -88,8 +92,9 @@ export class BouncingText extends Visualization {
 
   draw(ctx, dt) {
     const {
-      SIZE, BASE_SPEED, SPEED_GAIN, SPEED_TAU, DIP, MIN_GAP, POP, POP_DECAY,
+      BASE_SPEED, SPEED_GAIN, SPEED_TAU, DIP, MIN_GAP, POP, POP_DECAY,
     } = BouncingText;
+    const SIZE = this.size;
 
     const level = this.in('bounce');
     this.sinceTurn += dt;
@@ -97,12 +102,13 @@ export class BouncingText extends Visualization {
       if (level >= this.threshold && this.sinceTurn >= MIN_GAP) {
         this.turn();
         this.armed = false;
-        this.peak = level;
+        this.highest = level;
+        this.popLevel = Math.min(1, level);
         this.sinceTurn = 0;
       }
     } else {
-      this.peak = Math.max(this.peak, level);
-      if (level < this.peak - DIP) this.armed = true;
+      this.highest = Math.max(this.highest, level);
+      if (level < this.highest - DIP) this.armed = true;
     }
 
     this.pop = Math.max(0, this.pop - dt * POP_DECAY);
@@ -144,7 +150,8 @@ export class BouncingText extends Visualization {
     if (this.pop > 0) {
       const baseAlpha = ctx.globalAlpha;
       ctx.globalAlpha = baseAlpha * this.pop;
-      ctx.strokeStyle = this.style.accentColor ?? this.style.lineColor;
+      // The outline takes the peak colour when the turning level was extreme.
+      ctx.strokeStyle = this.peak(this.style.accentColor ?? this.style.lineColor, this.popLevel);
       ctx.lineWidth = 1.5;
       ctx.strokeText(this.text, 0, 0);
       ctx.globalAlpha = baseAlpha;

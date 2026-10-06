@@ -51,6 +51,8 @@ export class GlyphDendrite extends Visualization {
     spread: { kind: 'enum', values: ['narrow', 'wide'], default: 'wide' },
     from:   { kind: 'enum', values: ['edges', 'centre', 'scatter'], default: 'edges' },
     seed:   { kind: 'number', default: 1, min: 0, max: 9999, step: 1 },
+    width:  { kind: 'number', default: 1.8, min: 0.5, max: 5, step: 0.1 },
+    wander: { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
   };
 
   static SPREADS = { narrow: Math.PI * 0.4, wide: Math.PI * 0.7 };
@@ -91,9 +93,11 @@ export class GlyphDendrite extends Visualization {
     super(opts);
     const G = GlyphDendrite;
     this.glyph = readGlyph(this);
-    this.spread = G.SPREADS[this.options.spread] ?? G.SPREADS.wide;
-    this.from = G.SEEDS[this.options.from] ? this.options.from : 'edges';
-    const seed = Number(this.options.seed ?? 1) | 0;
+    this.spread = G.SPREADS[this.option('spread')];
+    this.from = this.option('from');
+    const seed = this.option('seed');
+    this.trunk = this.option('width');    // first width, times the style's lineWidth
+    this.wander = this.option('wander');  // how far branches bend off straight
     this.noise = createNoise3D(seed);
     this.rand = mulberry32(seed * 1021 + 7);
     this.rules = this.readRules();
@@ -219,7 +223,7 @@ export class GlyphDendrite extends Visualization {
     const seg = G.SEGMENT * Math.min(w, h);
     this.tips.push({
       x, y, a, depth: 0, seg, done: 0,
-      w: G.WIDTH * (this.style.lineWidth ?? 2),
+      w: this.trunk * (this.style.lineWidth ?? 2),
       tree: this.nextTree++, grace: G.GRACE, cell: -1,
     });
     this.seeded++;
@@ -295,7 +299,7 @@ export class GlyphDendrite extends Visualization {
     const step = speed * dt;
     const cols = this.cols;
     for (const tip of this.tips) {
-      tip.a += this.noise(tip.x * noiseScale, tip.y * noiseScale, tip.tree * 0.37) * G.WANDER * dt;
+      tip.a += this.noise(tip.x * noiseScale, tip.y * noiseScale, tip.tree * 0.37) * this.wander * dt;
       const x0 = tip.x;
       const y0 = tip.y;
       tip.x += Math.cos(tip.a) * step;
@@ -358,7 +362,7 @@ export class GlyphDendrite extends Visualization {
       }
       ctx.shadowBlur = this.style.shadowBlur ?? 0;
       ctx.shadowColor = this.style.shadowColor ?? accent;
-      ctx.fillStyle = rgba(accent, Math.min(1, alpha));
+      ctx.fillStyle = rgba(this.peak(accent, this.kick), Math.min(1, alpha));
       ctx.fill(dots);
       ctx.shadowBlur = 0;
     }

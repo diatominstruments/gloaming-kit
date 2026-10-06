@@ -5,7 +5,7 @@
  * the library would. Wrapped in an IIFE so its locals don't leak onto `window`.
  */
 (() => {
-  const { GloamingKit, catalog, VIZ, Glyph } = gloamingKit;
+  const { GloamingKit, catalog, VIZ, Glyph, DEFAULT_TRIGGERS } = gloamingKit;
 
   const canvas = document.getElementById('stage');
 
@@ -18,6 +18,10 @@
       background: '#0a0a12',
       lineColor: '#7fffd4',
       accentColor: '#ff5d8f',
+      // The library leaves the peak colour off; the demo turns it on so the
+      // third colour shows on the hardest hits.
+      peakColor: '#ffffff',
+      peakAbove: 0.8,
       lineWidth: 2,
       shadowBlur: 14,
     },
@@ -40,10 +44,15 @@
       // A background joining mid-section: it comes on after the attractor,
       // but its layer still draws it underneath.
       { from: 46, to: 64, visualizations: [VIZ.PERLIN_GLOW] },
-      // Same visualization, rewired: its ring bursts follow the hihat and its
-      // core breathes with treble instead of bass.
+      // Same visualization, rewired to the wider trigger set: rings burst on
+      // any transient, ticks scatter on claps, and the core breathes with
+      // treble instead of bass. Options reshape it too.
       { from: 54, to: 64, visualizations: [
-        { id: VIZ.RADIAL_BURST, bind: { ring: 'hihat', core: { relative: 'treble' } } },
+        {
+          id: VIZ.RADIAL_BURST,
+          bind: { ring: 'onset', scatter: 'clap', core: { relative: 'treble' } },
+          options: { ticks: 12, fade: 1 },
+        },
       ] },
       { from: 64, to: Infinity, visualizations: [VIZ.HARMONOGRAPH, VIZ.PARTICLES] },
     ],
@@ -110,6 +119,14 @@
   bindControl('st-bg', 'background');
   bindControl('st-line', 'lineColor');
   bindControl('st-accent', 'accentColor');
+  bindControl('st-peak-above', 'peakAbove', parseFloat);
+  // The peak colour can be switched off, which the library treats as "no
+  // third colour" rather than as a colour.
+  const peakPick = document.getElementById('st-peak');
+  const peakOn = document.getElementById('st-peak-on');
+  const applyPeak = () => viz.setStyle({ peakColor: peakOn.checked ? peakPick.value : null });
+  peakPick.addEventListener('input', () => { peakOn.checked = true; applyPeak(); });
+  peakOn.addEventListener('change', applyPeak);
   bindControl('st-width', 'lineWidth', parseFloat);
   bindControl('st-glow', 'shadowBlur', parseFloat);
 
@@ -119,6 +136,51 @@
     toggle3D.checked = false;
     toggle3D.disabled = true;
     toggle3D.title = 'three.js did not load';
+  }
+
+  // ---- triggers ------------------------------------------------------------
+
+  // One row per default trigger: on/off and threshold, applied through
+  // setTriggers(), with a dot that lights on every hit so it's easy to see
+  // what each one is catching in the song.
+  const triggerEl = document.getElementById('triggers');
+  const triggerState = DEFAULT_TRIGGERS.map((t) => ({ spec: { ...t }, on: true }));
+  const applyTriggers = () => viz.setTriggers(triggerState.filter((t) => t.on).map((t) => t.spec));
+  for (const t of triggerState) {
+    const row = document.createElement('div');
+    row.className = 'row trig-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.title = 'Enable this trigger';
+    const dot = document.createElement('span');
+    dot.className = 'trig-dot';
+    const label = document.createElement('label');
+    label.textContent = t.spec.name;
+    label.title = t.spec.kind && t.spec.kind !== 'band'
+      ? `${t.spec.kind} trigger`
+      : `band ${t.spec.band[0]}–${t.spec.band[1]} Hz`;
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = 0.05;
+    range.max = 1;
+    range.step = 0.01;
+    range.value = t.spec.threshold;
+    range.title = 'Threshold';
+    const value = document.createElement('span');
+    value.className = 'opt-value';
+    value.textContent = Number(t.spec.threshold).toFixed(2);
+    cb.addEventListener('change', () => { t.on = cb.checked; applyTriggers(); });
+    range.addEventListener('input', () => { value.textContent = Number(range.value).toFixed(2); });
+    range.addEventListener('change', () => { t.spec.threshold = parseFloat(range.value); applyTriggers(); });
+    let timer = null;
+    viz.on(`trigger:${t.spec.name}`, () => {
+      dot.classList.add('lit');
+      clearTimeout(timer);
+      timer = setTimeout(() => dot.classList.remove('lit'), 120);
+    });
+    row.append(cb, dot, label, range, value);
+    triggerEl.appendChild(row);
   }
 
   // ---- timeline editor -----------------------------------------------------
@@ -256,36 +318,71 @@
     return root;
   }
 
-  /** Grid editors for the checked visualizations of one group, in one window. */
+  /**
+   * Option editors for the checked visualizations of one group, in one
+   * window, built from what each declares: a select per enum, a slider per
+   * number, a text box per string, and a grid editor per drawing. Every one
+   * commits on release rather than per step, since a changed option is a new
+   * instance that crossfades in.
+   */
   function renderEditors(container, w, group) {
     container.innerHTML = '';
     for (const d of group.visualizations) {
       const entry = w.visualizations.find((e) => e.id === d.id);
-      if (!entry) continue;
-      const grids = d.options.filter((o) => o.kind === 'grid');
-      if (!grids.length) continue;
+      if (!entry || !d.options.length) continue;
       const set = (name, value) => {
         entry.options = { ...entry.options, [name]: value };
         apply();
       };
+      const current = (spec) => entry.options?.[spec.name] ?? spec.default;
       const heading = document.createElement('div');
       heading.className = 'glyph-label';
       heading.textContent = d.label;
       container.appendChild(heading);
-      // Its other choices alongside the drawing — how it's read, its form…
-      for (const spec of d.options.filter((o) => o.kind === 'enum')) {
-        const row = document.createElement('div');
-        row.className = 'row glyph-choice';
+
+      const row = (spec, ...controls) => {
+        const div = document.createElement('div');
+        div.className = 'row glyph-choice';
         const label = document.createElement('label');
         label.textContent = spec.name;
-        const select = document.createElement('select');
-        for (const value of spec.values) select.add(new Option(value, value));
-        select.value = entry.options?.[spec.name] ?? spec.default ?? spec.values[0];
-        select.addEventListener('change', () => set(spec.name, select.value));
-        row.append(label, select);
-        container.appendChild(row);
+        if (spec.default !== undefined && spec.kind !== 'grid') label.title = `default: ${spec.default}`;
+        div.append(label, ...controls);
+        container.appendChild(div);
+      };
+
+      for (const spec of d.options) {
+        if (spec.kind === 'enum') {
+          const select = document.createElement('select');
+          for (const value of spec.values) select.add(new Option(value, value));
+          select.value = current(spec) ?? spec.values[0];
+          // Enum values may be numbers (kaleidoscope's segments); keep the type.
+          select.addEventListener('change', () => set(spec.name, spec.values.find((v) => String(v) === select.value)));
+          row(spec, select);
+        } else if (spec.kind === 'number') {
+          const range = document.createElement('input');
+          range.type = 'range';
+          range.min = spec.min ?? 0;
+          range.max = spec.max ?? 1;
+          range.step = spec.step ?? 'any';
+          range.value = current(spec);
+          const value = document.createElement('span');
+          value.className = 'opt-value';
+          const show = () => { value.textContent = +Number(range.value).toFixed(3); };
+          show();
+          range.addEventListener('input', show);
+          range.addEventListener('change', () => set(spec.name, parseFloat(range.value)));
+          row(spec, range, value);
+        } else if (spec.kind === 'string') {
+          const text = document.createElement('input');
+          text.type = 'text';
+          text.className = 'opt-text';
+          if (spec.maxLength) text.maxLength = spec.maxLength;
+          text.value = current(spec) ?? '';
+          text.addEventListener('change', () => set(spec.name, text.value));
+          row(spec, text);
+        }
       }
-      for (const spec of grids) {
+      for (const spec of d.options.filter((o) => o.kind === 'grid')) {
         container.appendChild(glyphEditor(spec, entry.options?.[spec.name], (rows) => set(spec.name, rows)));
       }
     }

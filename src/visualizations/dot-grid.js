@@ -34,6 +34,9 @@ export class DotGrid extends Visualization {
   static options = {
     mode:    { kind: 'enum', values: ['noise', 'spectrum'], default: 'noise' },
     spacing: { kind: 'number', default: 26, min: 10, max: 80, step: 1 },
+    field:   { kind: 'number', default: 3, min: 0.5, max: 10, step: 0.1 },
+    maxSize: { kind: 'number', default: 0.42, min: 0.1, max: 0.5, step: 0.01 },
+    seed:    { kind: 'number', default: 3, min: 0, max: 9999, step: 1 },
   };
 
   static MAX_R = 0.42;        // largest dot radius, of the spacing
@@ -53,9 +56,11 @@ export class DotGrid extends Visualization {
 
   constructor(opts) {
     super(opts);
-    this.mode = this.options.mode === 'spectrum' ? 'spectrum' : 'noise';
-    this.spacing = Math.max(6, Number(this.options.spacing ?? 26) || 26);
-    this.noise = createNoise3D(3);
+    this.mode = this.option('mode');
+    this.spacing = this.option('spacing');
+    this.field = this.option('field');       // noise units across the smaller dimension
+    this.maxSize = this.option('maxSize');   // largest dot radius, of the spacing
+    this.noise = createNoise3D(this.option('seed'));
     this.ripples = [];        // { r (0..1+ of half-diagonal), strength }
     this.t = 0;
     this.swell = 0;
@@ -97,9 +102,9 @@ export class DotGrid extends Visualization {
     const cx = this.width / 2;
     const cy = this.height / 2;
     const half = Math.hypot(cx, cy);
-    const unit = D.FIELD / Math.min(this.width, this.height);
+    const unit = this.field / Math.min(this.width, this.height);
     const scale = D.BASE + D.SWELL_GAIN * this.swell;
-    const maxR = gap * D.MAX_R;
+    const maxR = gap * this.maxSize;
     const minR = gap * D.MIN_R;
     // Centre the grid so the pattern stays symmetric about the middle.
     const x0 = cx - Math.floor(cx / gap) * gap;
@@ -108,6 +113,7 @@ export class DotGrid extends Visualization {
 
     const plain = new Path2D();
     const lit = new Path2D();
+    const hot = new Path2D();
     for (let y = y0; y < this.height + gap; y += gap) {
       for (let x = x0; x < this.width + gap; x += gap) {
         const d = Math.hypot(x - cx, y - cy) / half;
@@ -124,7 +130,8 @@ export class DotGrid extends Visualization {
         }
         const r = Math.min(1, clamp01(v) + ring * D.RIPPLE_BOOST) * maxR;
         if (r < minR) continue;
-        const path = ring > 0.25 ? lit : plain;
+        // Dots on the crest of a strong ripple take the peak colour.
+        const path = this.peakAmount(ring) > 0.5 ? hot : ring > 0.25 ? lit : plain;
         path.moveTo(x + r, y);
         path.arc(x, y, r, 0, Math.PI * 2);
       }
@@ -135,5 +142,7 @@ export class DotGrid extends Visualization {
     ctx.fill(plain);
     ctx.fillStyle = rgba(this.style.accentColor ?? this.style.lineColor, Math.min(1, D.ALPHA * 1.8));
     ctx.fill(lit);
+    ctx.fillStyle = rgba(this.peak(this.style.accentColor ?? this.style.lineColor, 1), Math.min(1, D.ALPHA * 2.2));
+    ctx.fill(hot);
   }
 }

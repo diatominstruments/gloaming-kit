@@ -3,7 +3,7 @@ import { impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 import {
-  PALETTE_OPTION, DISTANCE_OPTION, Swoop, paletteColor, isPsychedelic, instanceGlow,
+  PALETTE_OPTION, DISTANCE_OPTION, Swoop, paletteColor, peakTint, isPsychedelic, instanceGlow,
 } from './three-shared.js';
 
 const PHI = (1 + Math.sqrt(5)) / 2;
@@ -132,6 +132,9 @@ export class Tesseract extends ThreeVisualization {
     palette: PALETTE_OPTION,
     shape: { kind: 'enum', values: Object.keys(POLYTOPES), default: '24-cell' },
     distance: DISTANCE_OPTION,
+    wDistance: { kind: 'number', default: 2.2, min: 1.3, max: 5, step: 0.1 },
+    tube: { kind: 'number', default: 0.028, min: 0.005, max: 0.08, step: 0.001 },
+    bead: { kind: 'number', default: 0.065, min: 0.01, max: 0.15, step: 0.005 },
   };
 
   static W_DISTANCE = 2.2;   // 4D viewpoint distance along w, in 3-sphere radii
@@ -158,8 +161,10 @@ export class Tesseract extends ThreeVisualization {
     this.projected = this.vertices.map(() => ({ p: new THREE.Vector3(), k: 1, w: 0 }));
     // A dense cage wants thinner members.
     const density = Math.sqrt(32 / this.edges.length);
-    this.tube = Tesseract.TUBE * Math.max(0.45, density);
-    this.bead = Tesseract.BEAD * Math.max(0.5, density);
+    this.tube = this.option('tube') * Math.max(0.45, density);
+    this.bead = this.option('bead') * Math.max(0.5, density);
+    // How far the 4D eye sits along w: nearer, and the inner cells balloon.
+    this.wDistance = this.option('wDistance');
 
     const tubeMaterial = new THREE.MeshStandardMaterial({ metalness: 0.4, roughness: 0.35 });
     const beadMaterial = new THREE.MeshStandardMaterial({ metalness: 0.2, roughness: 0.2 });
@@ -235,8 +240,9 @@ export class Tesseract extends ThreeVisualization {
 
   draw(ctx, dt) {
     const {
-      RATES, SPIN_GAIN, WHIP_DECAY, PULSE, W_DISTANCE, SCALE,
+      RATES, SPIN_GAIN, WHIP_DECAY, PULSE, SCALE,
     } = Tesseract;
+    const W_DISTANCE = this.wDistance;
     this.time += dt;
     this.hue += dt * 0.025;
     const rate = 1 + this.in('spin') * SPIN_GAIN;
@@ -278,7 +284,8 @@ export class Tesseract extends ThreeVisualization {
       s.setScalar(this.bead * swell * k * (1 + this.kick * 0.6));
       m.compose(p, q, s);
       this.beads.setMatrixAt(i, m);
-      this.beads.setColorAt(i, paletteColor(this, w * 0.5 + this.hue + 0.15, c));
+      // Beads flare toward the peak colour on a hard hit.
+      this.beads.setColorAt(i, peakTint(this, paletteColor(this, w * 0.5 + this.hue + 0.15, c), this.kick));
     }
     for (const mesh of [this.tubes, this.beads]) {
       mesh.instanceMatrix.needsUpdate = true;

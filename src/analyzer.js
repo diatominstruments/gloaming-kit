@@ -12,28 +12,88 @@ export const BANDS = {
 };
 
 /**
- * Names of the built-in triggers, for `static triggers` declarations and
+ * Names of the built-in triggers, for `static inputs` defaults and
  * `onTrigger` comparisons. Custom triggers passed to the engine may use any
  * name; these are just the ones that ship by default.
  */
 export const TRIGGER = {
+  SUB: 'sub',
   BASS: 'bass',
+  TOM: 'tom',
   SNARE: 'snare',
+  CLAP: 'clap',
   HIHAT: 'hihat',
+  ONSET: 'onset',
+  LOUD: 'loud',
+  LULL: 'lull',
 };
 
 /**
- * Default triggers. Each fires an event named `trigger:<name>`. `threshold`
- * is relative (see Dynamics), so the same value catches hits in a quiet
- * intro and a loud drop alike. It is really a question of how prominent a
- * hit must be against the loudest thing sharing its band: the snare's is
- * high so the hihats bleeding into it don't fire it, and the hihat's is low
- * because the snare's noise tends to set the peak up there.
+ * What a trigger listens to. Every kind runs the same Dynamics (see below) on
+ * a different measurement, so `threshold` means the same thing for all of
+ * them: how far up the recent floor-to-peak range the measurement has to jump.
+ *
+ *   band   energy in `band` Hz — a drum, a register, a hit in one part of the
+ *          mix (the default)
+ *   onset  spectral flux over `band`: how much the spectrum rose since the
+ *          last frame. Fires on any transient — a kick, a snare, a plucked
+ *          note — wherever it lands in the spectrum, and not on sustained
+ *          tones however loud. Defaults to the whole audible band.
+ *   rms    overall loudness, from the time-domain signal. A hit in the mix as
+ *          a whole; with `minIntensity` it becomes a "loud passage" detector.
+ *   lull   the inverse of the rest: fires once when the source's intensity
+ *          (band, or rms if none) falls below `threshold` after having been
+ *          above it — a breakdown, a drop into a quiet passage.
+ */
+export const TRIGGER_KINDS = ['band', 'onset', 'rms', 'lull'];
+
+/** The span of an onset trigger that names no band. */
+const ONSET_BAND = [20, 16000];
+/** How far above its threshold a lull trigger's intensity must climb to re-arm. */
+const LULL_HYSTERESIS = 0.1;
+/** The intensity drop a lull hit reports as full strength (~18 dB). */
+const LULL_FULL_DROP = 0.5;
+/**
+ * Spectral flux below this is the analyser's own jitter, in dB of mean rise
+ * per bin. A hit on a full mix sits around -40 to -55; quantization noise on a
+ * steady tone is well under -80.
+ */
+const FLUX_NOISE = -75;
+
+/**
+ * Default triggers. Each fires an event named `trigger:<name>`. Every field
+ * but `name` is optional:
+ *
+ *   kind          see TRIGGER_KINDS; 'band' when left out
+ *   band          [lo, hi] Hz; required for 'band', optional for 'onset'
+ *                 and 'lull', ignored by 'rms'
+ *   threshold     0..1, relative (see Dynamics), so the same value catches
+ *                 hits in a quiet intro and a loud drop alike. It is really
+ *                 a question of how prominent a hit must be against the
+ *                 loudest thing sharing its band: the snare's is high so the
+ *                 hihats bleeding into it don't fire it, and the hihat's is
+ *                 low because the snare's noise tends to set the peak up there
+ *   cooldown      seconds; shortest gap between two hits
+ *   hold          seconds the measurement must stay over the threshold before
+ *                 the trigger fires — 0 fires on the frame it crosses. Turns
+ *                 a hit detector into a sustain detector: a riser, a held
+ *                 chord, a swell
+ *   minIntensity  0..1; don't fire unless the source is at least this loud in
+ *                 absolute terms, however prominent the jump. For hits that
+ *                 should only count in the loud parts
+ *   rearm         fraction of `threshold` the measurement must fall back under
+ *                 before the trigger can fire again (0.5 by default)
  */
 export const DEFAULT_TRIGGERS = [
-  { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.6, cooldown: 0.15 },
-  { name: TRIGGER.SNARE, band: [1500, 4000],  threshold: 0.7, cooldown: 0.15 },
-  { name: TRIGGER.HIHAT, band: [8000, 14000], threshold: 0.4, cooldown: 0.08 },
+  { name: TRIGGER.SUB,   band: [20, 60],      threshold: 0.6,  cooldown: 0.2 },
+  { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.6,  cooldown: 0.15 },
+  { name: TRIGGER.TOM,   band: [150, 400],    threshold: 0.65, cooldown: 0.15 },
+  { name: TRIGGER.SNARE, band: [1500, 4000],  threshold: 0.7,  cooldown: 0.15 },
+  { name: TRIGGER.CLAP,  band: [4000, 8000],  threshold: 0.65, cooldown: 0.12 },
+  { name: TRIGGER.HIHAT, band: [8000, 14000], threshold: 0.4,  cooldown: 0.08 },
+  { name: TRIGGER.ONSET, kind: 'onset', band: ONSET_BAND, threshold: 0.6, cooldown: 0.1 },
+  { name: TRIGGER.LOUD,  kind: 'rms',   threshold: 0.9, minIntensity: 0.6, cooldown: 0.3 },
+  { name: TRIGGER.LULL,  kind: 'lull',  threshold: 0.5,  cooldown: 2 },
 ];
 
 /**
@@ -160,13 +220,15 @@ class Dynamics {
  *      spectrum:  Uint8Array of FFT magnitudes (for EQ-style visuals)
  *      waveform:  Uint8Array time-domain samples (for oscilloscope visuals)
  *
- *   'trigger:<name>'  { name, time, energy, strength, intensity }
- *      Fired when the trigger band's relative energy crosses `threshold`,
- *      then re-armed once it falls back under half of it, subject to a
- *      per-trigger cooldown. strength = how prominent
- *      the hit is against its surroundings (relative, 0..1); intensity = how
- *      loud the band is overall (absolute, 0..1). Use strength for whether
- *      and how sharply to react, intensity for how big the reaction is.
+ *   'trigger:<name>'  { name, kind, time, energy, strength, intensity }
+ *      Fired when the trigger's measurement (see TRIGGER_KINDS) crosses
+ *      `threshold` in relative terms, then re-armed once it falls back under
+ *      `rearm` of it, subject to a per-trigger cooldown. strength = how
+ *      prominent the hit is against its surroundings (relative, 0..1);
+ *      intensity = how loud the source is overall (absolute, 0..1). Use
+ *      strength for whether and how sharply to react, intensity for how big
+ *      the reaction is. A 'lull' hit's strength is instead the size of the
+ *      drop: how far intensity fell from the loudest point before it.
  */
 export class Analyzer extends Emitter {
   constructor(player, { fftSize = 2048, smoothing = 0.6, triggers = DEFAULT_TRIGGERS } = {}) {
@@ -178,6 +240,7 @@ export class Analyzer extends Emitter {
     player.output.connect(this.node);
 
     this.spectrum = new Uint8Array(this.node.frequencyBinCount);
+    this.previous = new Uint8Array(this.node.frequencyBinCount);   // last tick's spectrum, for flux
     this.waveform = new Uint8Array(this.node.fftSize);
     this.binHz = player.ctx.sampleRate / this.node.fftSize;
 
@@ -201,13 +264,59 @@ export class Analyzer extends Emitter {
   }
 
   setTriggers(triggers) {
-    this.triggers = triggers.map((t) => ({
-      threshold: 0.6,
-      ...t,
-      dynamics: this.bandDynamics(t.band[0], t.band[1]),
-      armed: true,
-      lastFired: -Infinity,
-    }));
+    this.triggers = triggers.map((t) => {
+      let kind = t.kind ?? 'band';
+      if (!TRIGGER_KINDS.includes(kind)) {
+        console.warn(`GloamingKit: trigger '${t.name}' has unknown kind '${kind}' — expected ${TRIGGER_KINDS.join('|')}; treating it as 'band'`);
+        kind = 'band';
+      }
+      let band = t.band ?? (kind === 'onset' ? ONSET_BAND : null);
+      if (kind === 'band' && !band) {
+        console.warn(`GloamingKit: trigger '${t.name}' needs a band — it will never fire`);
+        band = [0, 0];
+      }
+      const spec = {
+        threshold: 0.6, cooldown: 0.15, hold: 0, minIntensity: 0, rearm: 0.5,
+        ...t, kind, band,
+      };
+      return {
+        ...spec,
+        // Relative and intensity of what the trigger measures; an onset
+        // trigger measures flux, whose dB mean nothing, so it takes its
+        // intensity from the band's own level instead.
+        dynamics: kind === 'onset'
+          ? new Dynamics([0, 1], FLUX_NOISE)
+          : this.sourceDynamics(spec),
+        loudness: kind === 'onset' ? this.sourceDynamics(spec) : null,
+        // A lull arms on the way up, so it can't fire into the silence
+        // before the song starts.
+        armed: kind !== 'lull',
+        above: 0,            // seconds the measurement has been over threshold
+        loudest: 0,          // lull: highest intensity since it armed
+        lastFired: -Infinity,
+      };
+    });
+  }
+
+  /** Dynamics for the level a trigger watches: its band, or rms if it has none. */
+  sourceDynamics({ band }) {
+    return band ? this.bandDynamics(band[0], band[1]) : new Dynamics(RMS_RANGE, RMS_NOISE);
+  }
+
+  /**
+   * What a trigger measures this tick, as a linear amplitude for its
+   * Dynamics, plus the raw `energy` to report with a hit.
+   */
+  measure(t, level) {
+    if (t.kind === 'onset') {
+      const flux = this.bandFlux(t.band[0], t.band[1]);
+      return [flux, flux];
+    }
+    if (t.band) {
+      const energy = this.bandEnergy(t.band[0], t.band[1]);
+      return [this.amplitude(energy), energy];
+    }
+    return [level, level];
   }
 
   /** Average normalized magnitude of the FFT bins covering [lo, hi] Hz. */
@@ -217,6 +326,23 @@ export class Analyzer extends Emitter {
     if (end < start) return 0;   // band lies entirely above Nyquist
     let sum = 0;
     for (let i = start; i <= end; i++) sum += this.spectrum[i];
+    return sum / ((end - start + 1) * 255);
+  }
+
+  /**
+   * Spectral flux over [lo, hi] Hz: the mean rise per bin since the last
+   * tick, 0..1, counting only bins that got louder. A transient lifts many
+   * bins at once; a sustained tone, however loud, lifts none.
+   */
+  bandFlux(lo, hi) {
+    const start = Math.max(0, Math.floor(lo / this.binHz));
+    const end = Math.min(this.spectrum.length - 1, Math.ceil(hi / this.binHz));
+    if (end < start) return 0;
+    let sum = 0;
+    for (let i = start; i <= end; i++) {
+      const rise = this.spectrum[i] - this.previous[i];
+      if (rise > 0) sum += rise;
+    }
     return sum / ((end - start + 1) * 255);
   }
 
@@ -247,7 +373,10 @@ export class Analyzer extends Emitter {
       // lastFired is in song time, so a backwards seek leaves it ahead of the
       // clock — which would hold the cooldown closed until playback re-passed
       // the old fire point.
-      for (const t of this.triggers) t.lastFired = -Infinity;
+      for (const t of this.triggers) {
+        t.lastFired = -Infinity;
+        t.above = 0;
+      }
       dt = 0;
     }
 
@@ -277,18 +406,41 @@ export class Analyzer extends Emitter {
 
     this.fired.clear();
     for (const t of this.triggers) {
-      const energy = this.bandEnergy(t.band[0], t.band[1]);
-      const d = t.dynamics.update(this.amplitude(energy), dt);
-      if (d.relative < t.threshold * 0.5) t.armed = true;
-      if (dt === 0 || !t.armed) continue;
-      if (d.relative >= t.threshold && time - t.lastFired >= t.cooldown) {
+      const [amp, energy] = this.measure(t, level);
+      const d = t.dynamics.update(amp, dt);
+      const intensity = t.loudness
+        ? t.loudness.update(this.amplitude(this.bandEnergy(t.band[0], t.band[1])), dt).intensity
+        : d.intensity;
+      let hit = null;
+
+      if (t.kind === 'lull') {
+        // Keyed on absolute loudness, and armed by the loud passage before.
+        // Strength is the size of the drop from the loudest point since then:
+        // a fall of LULL_FULL_DROP in intensity (about 18 dB) reads as 1.
+        if (intensity > t.threshold + LULL_HYSTERESIS) t.armed = true;
+        if (t.armed) t.loudest = Math.max(t.loudest, intensity);
+        if (dt > 0 && t.armed && intensity < t.threshold) {
+          hit = { strength: clamp01((t.loudest - intensity) / LULL_FULL_DROP), intensity };
+          t.loudest = 0;
+        }
+      } else {
+        if (d.relative < t.threshold * t.rearm) t.armed = true;
+        const over = d.relative >= t.threshold && intensity >= t.minIntensity;
+        t.above = over ? t.above + dt : 0;
+        if (dt > 0 && t.armed && over && t.above >= t.hold) {
+          hit = { strength: d.relative, intensity };
+        }
+      }
+
+      if (hit && time - t.lastFired >= t.cooldown) {
         t.armed = false;
         t.lastFired = time;
-        const data = { name: t.name, time, energy, strength: d.relative, intensity: d.intensity };
+        const data = { name: t.name, kind: t.kind, time, energy, ...hit };
         this.fired.set(t.name, data);
         this.emit(`trigger:${t.name}`, data);
       }
     }
+    this.previous.set(this.spectrum);
 
     return frame;
   }

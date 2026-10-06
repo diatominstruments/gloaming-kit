@@ -1,4 +1,4 @@
-import { approach } from './util.js';
+import { approach, clamp01 } from './util.js';
 
 /**
  * Style interpolation.
@@ -96,4 +96,28 @@ export function easeStyle(current, target, tau, dt) {
 export function rgba(value, alpha) {
   const c = parseColor(value);
   return c ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})` : value;
+}
+
+/** Where the peak colour starts to show, when the style doesn't say. */
+export const PEAK_ABOVE = 0.8;
+
+/**
+ * How far toward the peak colour to draw, 0..1, for a `level` (a hit's
+ * impact, or a level slot): 0 up to the knee (`style.peakAbove`), rising to 1
+ * at a level of 1. Always 0 when the style has no `peakColor`, so a
+ * visualization that uses it looks exactly as it did before there was one.
+ */
+export function peakAmount(style, level, knee = style.peakAbove ?? PEAK_ABOVE) {
+  if (style.peakColor == null || !(level > knee)) return 0;
+  return knee >= 1 ? 1 : clamp01((level - knee) / (1 - knee));
+}
+
+/**
+ * `base` pushed toward the style's peak colour — its third colour, for the
+ * extremes — by peakAmount(). `base` itself below the knee, or when no peak
+ * colour is set.
+ */
+export function peakMix(style, base, level, knee) {
+  const t = peakAmount(style, level, knee);
+  return t > 0 ? mixColor(base, style.peakColor, t) : base;
 }

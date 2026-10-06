@@ -4,7 +4,7 @@ import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 import { mulberry32 } from '../noise.js';
 import {
-  PALETTE_OPTION, paletteColor, isPsychedelic, instanceGlow, fogToAlpha,
+  PALETTE_OPTION, paletteColor, peakTint, isPsychedelic, instanceGlow, fogToAlpha,
 } from './three-shared.js';
 
 const SHAPES = ['octahedron', 'cube', 'torus', 'tetrahedron'];
@@ -57,6 +57,11 @@ export class HelixCorridor extends ThreeVisualization {
     palette: PALETTE_OPTION,
     shape: { kind: 'enum', values: SHAPES, default: 'octahedron' },
     strands: { kind: 'number', default: 4, min: 1, max: 8, step: 1 },
+    density: { kind: 'number', default: 150, min: 30, max: 400, step: 10 },
+    radius: { kind: 'number', default: 2.4, min: 0.8, max: 6, step: 0.1 },
+    twist: { kind: 'number', default: 0.32, min: 0, max: 1.5, step: 0.02 },
+    size: { kind: 'number', default: 0.24, min: 0.05, max: 0.8, step: 0.01 },
+    speed: { kind: 'number', default: 9, min: 1, max: 30, step: 0.5 },
   };
 
   static PER_STRAND = 150;   // shapes per strand
@@ -74,11 +79,17 @@ export class HelixCorridor extends ThreeVisualization {
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
-    const { PER_STRAND, SPACING } = HelixCorridor;
+    const { SPACING } = HelixCorridor;
     this.psychedelic = isPsychedelic(this);
 
-    const shape = SHAPES.includes(this.options.shape) ? this.options.shape : 'octahedron';
-    this.strands = Math.max(1, Math.min(8, Math.round(this.options.strands ?? 4)));
+    const shape = this.option('shape');
+    this.strands = this.option('strands');
+    this.perStrand = this.option('density');   // shapes per strand
+    this.radius = this.option('radius');
+    this.twist = this.option('twist');
+    this.size = this.option('size');
+    this.speed = this.option('speed');
+    const PER_STRAND = this.perStrand;
     this.count = this.strands * PER_STRAND;
     this.length = PER_STRAND * SPACING;   // corridor length before it wraps
 
@@ -147,8 +158,11 @@ export class HelixCorridor extends ThreeVisualization {
 
   draw(ctx, dt) {
     const {
-      PER_STRAND, SPACING, RADIUS, TWIST, SIZE, SPEED, SPIN, WAVE_SPEED, WAVE_DECAY,
+      SPACING, SPIN, WAVE_SPEED, WAVE_DECAY,
     } = HelixCorridor;
+    const {
+      perStrand: PER_STRAND, radius: RADIUS, twist: TWIST, size: SIZE, speed: SPEED,
+    } = this;
     const spinIn = this.in('spin');
     this.time += dt;
     this.travel += SPEED * dt;
@@ -191,6 +205,8 @@ export class HelixCorridor extends ThreeVisualization {
         this.mesh.setMatrixAt(i, m);
 
         paletteColor(this, strand / this.strands * 0.5 + along * 0.012 + this.hue, c);
+        // The crest of a strong swell flares toward the peak colour.
+        peakTint(this, c, swell);
         // Only the swell glows hard; the rest stays lit, so the facets show.
         c.multiplyScalar(1 + swell * 4);
         this.mesh.setColorAt(i, c);

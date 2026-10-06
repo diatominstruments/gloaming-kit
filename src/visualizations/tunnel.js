@@ -48,6 +48,12 @@ export class Tunnel extends Visualization {
   static SPEED = 0.75;   // world units per second
   static SPIN_SMOOTHING = 3;   // higher = rotation tracks treble more tightly
 
+  static options = {
+    speed:    { kind: 'number', default: Tunnel.SPEED, min: 0.1, max: 3, step: 0.05 },
+    spacing:  { kind: 'number', default: Tunnel.SPACING, min: 0.1, max: 1, step: 0.02 },
+    segments: { kind: 'number', default: Tunnel.SEGMENTS, min: 8, max: 128, step: 4 },
+  };
+
   // --- live rings (tune these by eye) ---
   static LIVE_EVERY = 3;    // 1 ring in N keeps tracking the music; 0 disables
   static LIVE_TAU = 0.45;   // seconds to cover most of the way to the current
@@ -62,8 +68,11 @@ export class Tunnel extends Visualization {
 
   constructor(opts) {
     super(opts);
+    this.speed = this.option('speed');
+    this.spacing = this.option('spacing');
+    this.segments = this.option('segments');
     this.rings = [];       // { z, shape: Float32Array, signs|null }
-    this.sinceSpawn = Tunnel.SPACING;   // spawn one immediately
+    this.sinceSpawn = this.spacing;   // spawn one immediately
     this.rotation = 0;
     this.spinRate = 0;
     this.spawned = 0;      // counts every ring ever spawned, for the live stride
@@ -75,7 +84,8 @@ export class Tunnel extends Visualization {
    * differ because each keeps its own silhouette and its own lag.
    */
   updateLive(dt) {
-    const { SEGMENTS, LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Tunnel;
+    const { LIVE_TAU, LIVE_GAIN, LIVE_FLOOR } = Tunnel;
+    const SEGMENTS = this.segments;
     if (!this.rings.some((r) => r.signs)) return;
     // Expanded once here, not per ring — every live ring reads the same instant.
     const env = expandEnvelope(sampleEnvelope(this.frame?.waveform, SEGMENTS), LIVE_FLOOR);
@@ -94,7 +104,8 @@ export class Tunnel extends Visualization {
   }
 
   draw(ctx, dt) {
-    const { Z_NEAR, Z_FAR, SPACING, SEGMENTS, SPEED, SPIN_SMOOTHING, LIVE_EVERY } = Tunnel;
+    const { Z_NEAR, Z_FAR, SPIN_SMOOTHING, LIVE_EVERY } = Tunnel;
+    const { spacing: SPACING, segments: SEGMENTS, speed: SPEED } = this;
     const cx = this.width / 2;
     const cy = this.height / 2;
     const focal = Math.min(this.width, this.height) * 0.14;

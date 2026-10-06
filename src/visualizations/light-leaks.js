@@ -47,11 +47,18 @@ export class LightLeaks extends Visualization {
   static LEAK_FLARE = 0.15;
   static LEAK_RATE = 0.02;       // how fast leaks slide around the edge, per second
 
+  static options = {
+    discs: { kind: 'number', default: LightLeaks.DISCS, min: 0, max: 60, step: 1 },
+    leaks: { kind: 'number', default: LightLeaks.LEAKS, min: 0, max: 6, step: 1 },
+    seed:  { kind: 'number', default: 5, min: 0, max: 9999, step: 1 },
+  };
+
   constructor(opts) {
     super(opts);
-    this.noise = createNoise3D(5);
+    this.noise = createNoise3D(this.option('seed'));
     const [lo, hi] = LightLeaks.DISC_R;
-    this.discs = Array.from({ length: LightLeaks.DISCS }, (_, i) => ({
+    const leaks = this.option('leaks');
+    this.discs = Array.from({ length: this.option('discs') }, (_, i) => ({
       u: Math.random(),
       v: Math.random(),
       r: lo + Math.random() * (hi - lo),
@@ -59,8 +66,8 @@ export class LightLeaks extends Visualization {
       flash: 0,
     }));
     // Leaks sit at a position along the screen's perimeter, 0..1.
-    this.leaks = Array.from({ length: LightLeaks.LEAKS }, (_, i) => ({
-      at: i / LightLeaks.LEAKS + Math.random() * 0.2,
+    this.leaks = Array.from({ length: leaks }, (_, i) => ({
+      at: i / leaks + Math.random() * 0.2,
       dir: i % 2 ? 1 : -1,
     }));
     this.t = 0;
@@ -123,7 +130,7 @@ export class LightLeaks extends Visualization {
       leak.at += leak.dir * L.LEAK_RATE * dt;
       const [x, y] = this.edgePoint(leak.at);
       const a = L.LEAK_ALPHA + L.LEAK_WARMTH * this.warmth + L.LEAK_FLARE * this.flare;
-      this.glow(ctx, x, y, max * L.LEAK_R, accent, a, false);
+      this.glow(ctx, x, y, max * L.LEAK_R, this.peak(accent, this.flare), a, false);
     }
 
     this.discs.forEach((d, i) => {
@@ -141,7 +148,8 @@ export class LightLeaks extends Visualization {
 
       const r = d.r * min * (1 + L.FLASH_SWELL * d.flash);
       const a = L.DISC_ALPHA + L.DISC_WARMTH * this.warmth + L.DISC_FLASH * d.flash;
-      this.glow(ctx, d.u * this.width, d.v * this.height, r, d.accent ? accent : style.lineColor, a, true);
+      // A disc bloomed by a hard hit flares in the peak colour.
+      this.glow(ctx, d.u * this.width, d.v * this.height, r, this.peak(d.accent ? accent : style.lineColor, d.flash), a, true);
     });
     ctx.restore();
   }

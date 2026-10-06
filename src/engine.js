@@ -17,7 +17,7 @@ const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
  *
  *   const viz = new GloamingKit({
  *     canvas,
- *     style: { background: '#0a0a12', lineColor: '#7fffd4', ... },
+ *     style: { background: '#0a0a12', lineColor: '#7fffd4', accentColor: '#ff5d8f', peakColor: '#ffffff', ... },
  *     timeline: [{ from: 0, to: 60, visualizations: ['eq-bars'] }],
  *     triggers: [{ name: TRIGGER.BASS, band: [40, 130], threshold: 0.6, cooldown: 0.15 }],
  *   });
@@ -62,6 +62,8 @@ export class GloamingKit extends Emitter {
       background: '#0a0a12',
       lineColor: '#7fffd4',
       accentColor: '#ff5d8f',
+      peakColor: null,       // third colour, shown only at the extremes; null = off
+      peakAbove: 0.8,        // the level (hit impact, 0..1) above which it shows
       lineWidth: 2,
       shadowBlur: 0,
       shadowColor: null,
@@ -122,6 +124,8 @@ export class GloamingKit extends Emitter {
     // `shadowColor: null` means "track lineColor"; resolve it so the glow
     // travels with the line instead of snapping when a window changes it.
     if (target.shadowColor == null) target.shadowColor = target.lineColor;
+    // `peakColor: null` stays null: it means "no third colour", and every
+    // visualization then draws exactly what it drew before there was one.
 
     // Drop keys that a since-ended window introduced beyond the base style:
     // easeStyle only walks the target's keys, so nothing would ever update
@@ -404,5 +408,5 @@ export { Glyph, GLYPH_LEVELS } from './visualizations/glyph.js';
 export {
   register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES, LAYER, LAYERS,
 } from './visualizations/index.js';
-export { BANDS, TRIGGER, DEFAULT_TRIGGERS } from './analyzer.js';
+export { BANDS, TRIGGER, TRIGGER_KINDS, DEFAULT_TRIGGERS } from './analyzer.js';
 export { impact } from './util.js';

@@ -56,13 +56,22 @@ export class ParticleField extends Visualization {
   static HEAT_SPEED = 400;   // px/s that counts as "fully lit"; brightness
                              // rides speed so the hit itself is what flashes
   static HOT = 0.45;         // heat above which a mote burns accent-coloured
+  static PEAK = 0.85;        // heat above which it burns peak-coloured
   static MIN_TRAIL = 0.5;    // px; a round-capped stub is how a still mote
                              // renders as a dot, and zero-length subpaths are
                              // not reliably drawn
 
+  static options = {
+    count: { kind: 'number', default: ParticleField.COUNT, min: 20, max: 600, step: 10 },
+    size:  { kind: 'number', default: 1, min: 0.3, max: 4, step: 0.1 },
+    trail: { kind: 'number', default: ParticleField.TRAIL, min: 0, max: 0.3, step: 0.01 },
+  };
+
   constructor(opts) {
     super(opts);
-    this.particles = Array.from({ length: ParticleField.COUNT }, () => this.spawn());
+    this.size = this.option('size');
+    this.trail = this.option('trail');
+    this.particles = Array.from({ length: this.option('count') }, () => this.spawn());
   }
 
   spawn() {
@@ -75,7 +84,7 @@ export class ParticleField extends Visualization {
       hvx: (Math.random() - 0.5) * DRIFT * 2,
       hvy: (Math.random() - 0.5) * DRIFT * 2,
       vx: 0, vy: 0,
-      size: 1 + Math.random() * 2.5,
+      size: (1 + Math.random() * 2.5) * this.size,
       phase: Math.random() * Math.PI * 2,
       // Per-mote gain and swirl direction, so a hit scatters the field
       // unevenly instead of moving it as one rigid shell.
@@ -105,7 +114,8 @@ export class ParticleField extends Visualization {
   }
 
   draw(ctx, dt) {
-    const { OMEGA, TRAIL, MAX_TRAIL, MIN_TRAIL, HEAT_SPEED, HOT } = ParticleField;
+    const { OMEGA, MAX_TRAIL, MIN_TRAIL, HEAT_SPEED, HOT, PEAK } = ParticleField;
+    const TRAIL = this.trail;
     const treble = this.in('twinkle');
     const w = this.width;
     const h = this.height;
@@ -164,6 +174,7 @@ export class ParticleField extends Visualization {
       // settles, so the flash and the motion are the same event.
       const heat = Math.min(1, speed / HEAT_SPEED);
       p.hot = heat > HOT;
+      p.heat = heat;
       p.alpha = Math.min(1, 0.18 + shimmer * (0.22 + treble * 0.5) + heat * 0.55);
       p.lw = p.size * (1 + treble * 0.8 + heat * 0.5);
 
@@ -179,11 +190,14 @@ export class ParticleField extends Visualization {
 
     // Then the motes themselves, sharp, each at its own brightness. The ones
     // still carrying a hit burn accent-coloured, so a bass beat scatters
-    // sparks through the field rather than just nudging it.
+    // sparks through the field rather than just nudging it; the fastest of
+    // them burn in the peak colour.
     ctx.shadowBlur = 0;
     const accent = this.style.accentColor ?? this.style.lineColor;
     for (const p of this.particles) {
-      ctx.strokeStyle = p.hot ? accent : this.style.lineColor;
+      ctx.strokeStyle = p.heat > PEAK
+        ? this.peak(accent, p.heat)
+        : p.hot ? accent : this.style.lineColor;
       ctx.globalAlpha = baseAlpha * p.alpha;
       ctx.lineWidth = p.lw;
       ctx.beginPath();

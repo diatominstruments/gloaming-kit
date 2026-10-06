@@ -11,9 +11,17 @@ export class EQBars extends Visualization {
   static description = 'Spectrum as log-spaced bars with a fast attack and slow decay.';
   static category = CATEGORY.CLASSIC;
 
+  static BARS = 28;
+  static GAP = 4;          // px between bars
+  static options = {
+    bars: { kind: 'number', default: EQBars.BARS, min: 8, max: 96, step: 1 },
+    gap:  { kind: 'number', default: EQBars.GAP, min: 0, max: 12, step: 1 },
+  };
+
   constructor(opts) {
     super(opts);
-    this.barCount = 28;
+    this.barCount = this.option('bars');
+    this.gap = this.option('gap');
     this.values = new Float32Array(this.barCount); // smoothed heights
   }
 
@@ -21,7 +29,7 @@ export class EQBars extends Visualization {
     if (!this.frame) return;
     const { spectrum } = this.frame;
     const n = this.barCount;
-    const gap = 4;
+    const gap = this.gap;
     const barW = (this.width - gap * (n + 1)) / n;
     const maxH = this.height * 0.75;
 
@@ -44,6 +52,8 @@ export class EQBars extends Visualization {
       const h = this.values[i] * maxH;
       const x = gap + i * (barW + gap);
       const y = (this.height + maxH) / 2 - h;
+      // A bar near the top of its range takes the peak colour.
+      ctx.fillStyle = this.peak(this.style.lineColor, this.values[i]);
       ctx.globalAlpha *= 0.9;
       ctx.fillRect(x, y, barW, h);
       ctx.globalAlpha /= 0.9;

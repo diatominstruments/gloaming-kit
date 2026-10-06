@@ -13,7 +13,9 @@ import { withThree } from './three-base.js';
  *
  * Because points are cheap on the GPU, the cloud keeps the last CLOUD points
  * rather than only this frame's, iterating PER_FRAME each frame; older points
- * fade, so a morph dissolves into the new shape instead of popping.
+ * fade, so a morph dissolves into the new shape instead of popping. The
+ * `points` option scales both by the same factor it scales the 2D cloud, and
+ * `dot` scales the point size.
  */
 export const pointCloud3D = (Base) => class extends withThree(Base) {
   static fallback = Base;
@@ -27,12 +29,17 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
-    const { CLOUD, DEPTH_FADE, POINT_ALPHA } = this.constructor;
+    const { DEPTH_FADE, POINT_ALPHA, PER_FRAME, CLOUD, POINTS, DOT } = this.constructor;
+    // The `points` option is in 2D terms; the GPU cloud scales with it.
+    const density = this.pointCount / POINTS;
+    this.perFrame = Math.round(PER_FRAME * density);
+    this.cloudSize = Math.round(CLOUD * density);
+    this.size = this.constructor.SIZE * (this.dot / DOT);
 
     this.write = 0;   // next ring-buffer slot
     this.filled = 0;
 
-    this.cloud = new Float32Array(CLOUD * 3);
+    this.cloud = new Float32Array(this.cloudSize * 3);
     this.attribute = new THREE.BufferAttribute(this.cloud, 3).setUsage(THREE.DynamicDrawUsage);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', this.attribute);
@@ -51,6 +58,8 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
       uLine: { value: new THREE.Color() },
       uAccent: { value: new THREE.Color() },
       uAccentMix: { value: 0 },
+      uPeak: { value: new THREE.Color() },
+      uPeakMix: { value: 0 },
     };
 
     const points = new THREE.Points(geometry, new THREE.ShaderMaterial({
@@ -73,7 +82,8 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
 
   /** Run the map PER_FRAME times into the ring buffer. */
   iterate() {
-    const { PER_FRAME, CLOUD, SEED, LIMIT } = this.constructor;
+    const { SEED, LIMIT } = this.constructor;
+    const { perFrame: PER_FRAME, cloudSize: CLOUD } = this;
     const p = this.params;
     const out = this.out;
     const cloud = this.cloud;
@@ -110,7 +120,8 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
   }
 
   draw(ctx, dt) {
-    const { SCALE, FOCAL, SIZE } = this.constructor;
+    const { FOCAL } = this.constructor;
+    const { scale: SCALE, size: SIZE } = this;
     const { width: w, height: h } = this;
     this.advance(dt);
     if (!w || !h) return;
@@ -139,6 +150,9 @@ export const pointCloud3D = (Base) => class extends withThree(Base) {
     u.uLine.value.copy(this.color(this.style.lineColor));
     u.uAccent.value.copy(this.color(this.style.accentColor ?? this.style.lineColor));
     u.uAccentMix.value = this.accentMix();
+    // As the 2D cloud: the hardest hits push it on to the peak colour.
+    u.uPeakMix.value = this.peakAmount(u.uAccentMix.value);
+    if (u.uPeakMix.value > 0) u.uPeak.value.copy(this.color(this.style.peakColor));
     this.points.geometry.setDrawRange(0, this.filled);
 
     const baseAlpha = ctx.globalAlpha;
@@ -185,6 +199,8 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 uLine;
 uniform vec3 uAccent;
 uniform float uAccentMix;
+uniform vec3 uPeak;
+uniform float uPeakMix;
 uniform float uAlpha;
 uniform float uDepthFade;
 
@@ -200,6 +216,7 @@ void main() {
   // the far side is mostly accent and the near side entirely.
   float near = clamp((vPersp - 1.0) * 3.0 + 0.5, 0.0, 1.0);
   vec3 color = mix(uLine, uAccent, clamp(near * 0.6 + uAccentMix * 0.7, 0.0, 1.0));
+  color = mix(color, uPeak, uPeakMix);
   float alpha = uAlpha * cover * vAge
     * mix(1.0, clamp(vPersp, 0.0, 1.0), uDepthFade);
   gl_FragColor = vec4(color * alpha, alpha);

@@ -29,6 +29,7 @@ export class Kaleidoscope extends FeedbackVisualization {
   static SEGMENTS = [4, 6, 8, 10, 12, 16];
   static options = {
     segments: { kind: 'enum', values: Kaleidoscope.SEGMENTS, default: 8 },
+    zoom: { kind: 'number', default: 0.94, min: 0.8, max: 1.05, step: 0.005 },
   };
 
   static FLOOR = 0.3;         // rosette strength at silence
@@ -41,6 +42,7 @@ export class Kaleidoscope extends FeedbackVisualization {
 
   constructor(opts) {
     super(opts);
+    this.zoom = this.option('zoom');   // under 1 recedes into rings of copies
     const i = Kaleidoscope.SEGMENTS.indexOf(Number(this.options.segments));
     this.index = i === -1 ? Kaleidoscope.SEGMENTS.indexOf(8) : i;
     this.reveal = 0;
@@ -86,7 +88,7 @@ export class Kaleidoscope extends FeedbackVisualization {
       ctx.closePath();
       ctx.clip();
       ctx.rotate(this.angle);
-      ctx.scale(K.ZOOM, K.ZOOM);
+      ctx.scale(this.zoom, this.zoom);
       this.drawPrevious(ctx, -cx, -cy);
       ctx.restore();
     }

@@ -9,6 +9,8 @@ import {
 
 const PULSES = 3;
 
+// Named presets for `speed` and `deformAmount`, which are numbers now; the
+// names are still accepted so configs written before stay valid.
 const SPEEDS = { slow: 0.3, med: 0.55, fast: 1 };
 const DEFORMS = ['twist', 'ripple', 'breathe'];
 const AMOUNTS = { off: 0, low: 0.5, med: 1, high: 1.8 };
@@ -83,9 +85,9 @@ export class FractalCathedral extends ThreeVisualization {
 
   static options = {
     palette: PALETTE_OPTION,
-    speed: { kind: 'enum', values: Object.keys(SPEEDS), default: 'med' },
+    speed: { kind: 'number', default: SPEEDS.med, min: 0.1, max: 1.5, step: 0.05 },
     deform: { kind: 'enum', values: DEFORMS, default: 'twist' },
-    deformAmount: { kind: 'enum', values: Object.keys(AMOUNTS), default: 'med' },
+    deformAmount: { kind: 'number', default: AMOUNTS.med, min: 0, max: 2.5, step: 0.1 },
   };
 
   // Every pixel marches up to ~100 steps through the fractal, so this is the
@@ -110,14 +112,14 @@ export class FractalCathedral extends ThreeVisualization {
     super(opts);
     const THREE = this.THREE;
     this.psychedelic = isPsychedelic(this);
-    const pick = (name, table) => {
-      const value = this.options[name] ?? FractalCathedral.options[name].default;
-      if (!(value in table)) console.warn(`GloamingKit: fractal-cathedral ${name} '${value}'; expected ${Object.keys(table).join('|')}`);
-      return value in table ? value : FractalCathedral.options[name].default;
-    };
-    this.pace = SPEEDS[pick('speed', SPEEDS)];
-    this.amount = AMOUNTS[pick('deformAmount', AMOUNTS)];
-    this.deform = pick('deform', Object.fromEntries(DEFORMS.map((d) => [d, d])));
+    // A preset name (the old enum values) or a number.
+    const preset = (name, table) => (
+      typeof this.options[name] === 'string' && this.options[name] in table
+        ? table[this.options[name]]
+        : this.option(name));
+    this.pace = preset('speed', SPEEDS);
+    this.amount = preset('deformAmount', AMOUNTS);
+    this.deform = this.option('deform');
 
     this.z = 0;
     this.speed = FractalCathedral.SPEED[0] * this.pace;
@@ -353,7 +355,8 @@ void main() {
   // reaches near their depth.
   for (int k = 0; k < ${PULSES}; k++) {
     float ring = exp(-abs(p.z - uPulses[k].x) * 1.3) * uPulses[k].y;
-    col += palette(uHue + 0.5 + float(k) * 0.13) * ring * (hit ? 1.6 : 0.4);
+    // A ring from a hard hit burns toward the peak colour.
+    col += peak(palette(uHue + 0.5 + float(k) * 0.13), uPulses[k].y) * ring * (hit ? 1.6 : 0.4);
   }
 
   col += palette(uHue + t * 0.02 + 0.2) * haze * 0.012 * uHaze;

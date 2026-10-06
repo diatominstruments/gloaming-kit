@@ -48,6 +48,7 @@ export class GlyphCurrent extends Visualization {
     count: { kind: 'number', default: 2200, min: 200, max: 6000, step: 100 },
     scale: { kind: 'number', default: 1, min: 0.4, max: 3, step: 0.05 },
     seed:  { kind: 'number', default: 1, min: 0, max: 9999, step: 1 },
+    trail: { kind: 'number', default: 1.6, min: 0.2, max: 6, step: 0.1 },
   };
 
   static TILE = 0.5;          // one copy of the drawing, of the smaller dimension, at scale 1
@@ -79,11 +80,12 @@ export class GlyphCurrent extends Visualization {
     super(opts);
     this.glyph = readGlyph(this);
     this.field = glyphField(this.glyph);
-    this.scale = Math.max(0.1, Number(this.options.scale ?? 1) || 1);
-    const seed = Number(this.options.seed ?? 1) | 0;
+    this.scale = this.option('scale');
+    const seed = this.option('seed');
+    this.trailTau = this.option('trail');   // seconds a trail takes to fade mostly away
     this.noise = createNoise3D(seed);
     this.rand = mulberry32(seed * 7919 + 17);
-    this.count = Math.max(1, Number(this.options.count ?? 2200) | 0);
+    this.count = this.option('count');
     this.px = new Float32Array(this.count);
     this.py = new Float32Array(this.count);
     this.life = new Float32Array(this.count);
@@ -193,7 +195,7 @@ export class GlyphCurrent extends Visualization {
 
     const tc = this.trailCtx;
     tc.globalCompositeOperation = 'destination-out';
-    tc.fillStyle = `rgba(0, 0, 0, ${1 - Math.exp(-dt / G.TRAIL_TAU)})`;
+    tc.fillStyle = `rgba(0, 0, 0, ${1 - Math.exp(-dt / this.trailTau)})`;
     tc.fillRect(0, 0, this.width, this.height);
     tc.globalCompositeOperation = 'source-over';
     const alpha = Math.min(1, (G.ALPHA + G.GLOW_GAIN * this.glow) * (1 + 0.8 * this.kick));
@@ -204,7 +206,8 @@ export class GlyphCurrent extends Visualization {
     tc.stroke(slow);
     tc.strokeStyle = rgba(line, alpha);
     tc.stroke(mid);
-    tc.strokeStyle = rgba(accent, Math.min(1, alpha * 1.3));
+    // The fastest motes burn peak-coloured while a hard surge lasts.
+    tc.strokeStyle = rgba(this.peak(accent, this.kick), Math.min(1, alpha * 1.3));
     tc.stroke(fast);
 
     ctx.shadowBlur = 0;

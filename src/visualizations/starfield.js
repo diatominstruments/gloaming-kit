@@ -21,10 +21,17 @@ export class Starfield extends Visualization {
   };
 
   static SPEED = 0.5;   // depth units per second
+  static COUNT = 240;
+
+  static options = {
+    count: { kind: 'number', default: Starfield.COUNT, min: 50, max: 1500, step: 10 },
+    speed: { kind: 'number', default: Starfield.SPEED, min: 0.1, max: 3, step: 0.05 },
+  };
 
   constructor(opts) {
     super(opts);
-    this.stars = Array.from({ length: 240 }, () => this.spawn(Math.random()));
+    this.speed = this.option('speed');
+    this.stars = Array.from({ length: this.option('count') }, () => this.spawn(Math.random()));
     this.sizeBoost = 0;
   }
 
@@ -49,10 +56,12 @@ export class Starfield extends Visualization {
 
     this.applyStyle(ctx);
     ctx.shadowBlur = 0; // hundreds of dots — glow here costs too much
+    // The whole field takes the peak colour while a hard hit's swell lasts.
+    ctx.strokeStyle = ctx.fillStyle = this.peak(this.style.lineColor, this.sizeBoost);
 
     for (const s of this.stars) {
       const prevZ = s.z;
-      s.z -= Starfield.SPEED * dt;
+      s.z -= this.speed * dt;
       if (s.z <= 0.03) {
         Object.assign(s, this.spawn(1));
         continue;

@@ -40,7 +40,8 @@ export const flowRibbon = (Base) => class extends withThree(Base) {
   constructor(opts) {
     super(opts);
     const THREE = this.THREE;
-    const { TRAIL, CHUNKS, CENTER, WIDTH_RANGE, DEPTH_FADE } = this.constructor;
+    const { CHUNKS, CENTER, WIDTH_RANGE, DEPTH_FADE } = this.constructor;
+    const TRAIL = this.trailLength;
 
     // The ring buffer unrolled tail → head each frame, so instance i is the
     // segment from sample i to sample i + 1: two views on one buffer, offset
@@ -78,6 +79,9 @@ export const flowRibbon = (Base) => class extends withThree(Base) {
       uDepthFade: { value: DEPTH_FADE },
       uLine: { value: new THREE.Color() },
       uAccent: { value: new THREE.Color() },
+      // The head leans toward the peak colour while a hard hit's kick lasts.
+      uPeak: { value: new THREE.Color() },
+      uPeakMix: { value: 0 },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -98,7 +102,7 @@ export const flowRibbon = (Base) => class extends withThree(Base) {
 
   /** Copy the ring buffer into `points`, oldest first. At most two copies. */
   unroll() {
-    const { TRAIL } = this.constructor;
+    const TRAIL = this.trailLength;
     const start = (this.head - this.count + TRAIL) % TRAIL;
     const first = Math.min(this.count, TRAIL - start);
     this.points.set(this.trail.subarray(start * 3, (start + first) * 3), 0);
@@ -117,8 +121,8 @@ export const flowRibbon = (Base) => class extends withThree(Base) {
     // The 2D projection is screen = centre + view * scale * focal / depth;
     // a perspective camera gives screen = view * (h / 2) / tan(fov / 2) / depth.
     // Equating them fixes the field of view.
-    const { SCALE, NEAR } = this.constructor;
-    const scale = Math.min(w, h) * SCALE;
+    const { NEAR } = this.constructor;
+    const scale = Math.min(w, h) * this.scale;
     const fov = (2 * Math.atan(h / (2 * scale * this.focal)) * 180) / Math.PI;
     const cam = this.camera;
     if (cam.fov !== fov || cam.aspect !== w / h) {
@@ -140,6 +144,8 @@ export const flowRibbon = (Base) => class extends withThree(Base) {
     u.uSegments.value = this.count - 1;
     u.uLine.value.copy(this.color(this.style.lineColor));
     u.uAccent.value.copy(this.color(this.style.accentColor ?? this.style.lineColor));
+    u.uPeakMix.value = this.peakAmount(this.kick);
+    if (u.uPeakMix.value > 0) u.uPeak.value.copy(this.color(this.style.peakColor));
     this.ribbon.geometry.instanceCount = this.count - 1;
 
     const baseAlpha = ctx.globalAlpha;
@@ -246,6 +252,8 @@ void main() {
 const FRAGMENT = /* glsl */ `
 uniform vec3 uLine;
 uniform vec3 uAccent;
+uniform vec3 uPeak;
+uniform float uPeakMix;
 uniform float uHeadFrom;
 uniform float uDepthFade;
 
@@ -253,7 +261,7 @@ varying float vAge;
 varying float vPersp;
 
 void main() {
-  vec3 color = vAge > uHeadFrom ? uAccent : uLine;
+  vec3 color = vAge > uHeadFrom ? mix(uAccent, uPeak, uPeakMix) : uLine;
   // age² matches the 2D ribbon's fade; perspective dims the far side.
   float alpha = vAge * vAge * mix(1.0, clamp(vPersp, 0.0, 1.0), uDepthFade);
   gl_FragColor = vec4(color, alpha);

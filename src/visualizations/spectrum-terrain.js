@@ -53,10 +53,6 @@ export class SpectrumTerrain extends ThreeVisualization {
     sway:  { kind: 'level', default: { intensity: 'mid', smooth: 1.5 } },
   };
 
-  static options = {
-    palette: PALETTE_OPTION,
-  };
-
   static SPEED = 11;          // world units per second
   static ROW_LENGTH = 0.32;   // world units between rows
   static COL_WIDTH = 0.17;   // narrow enough that the walls are in frame on a portrait screen
@@ -69,8 +65,18 @@ export class SpectrumTerrain extends ThreeVisualization {
   static DECAY = 2.2;         // how fast a column falls after a peak, per second
   static WAVE_SPEED = 24;     // world units/s the hit waves roll outward
 
+  static options = {
+    palette: PALETTE_OPTION,
+    speed: { kind: 'number', default: SpectrumTerrain.SPEED, min: 2, max: 30, step: 0.5 },
+    height: { kind: 'number', default: SpectrumTerrain.HEIGHT, min: 1, max: 20, step: 0.5 },
+    mountains: { kind: 'number', default: SpectrumTerrain.MOUNTAINS, min: 0, max: 20, step: 1 },
+  };
+
   constructor(opts) {
     super(opts);
+    this.speed = this.option('speed');
+    this.peakHeight = this.option('height');
+    this.mountains = this.option('mountains');
     const THREE = this.THREE;
     const { ROW_LENGTH, COL_WIDTH } = SpectrumTerrain;
     this.psychedelic = isPsychedelic(this);
@@ -141,7 +147,8 @@ export class SpectrumTerrain extends ThreeVisualization {
 
   /** Lay down the newest row at the horizon, from the current spectrum. */
   layRow() {
-    const { HEIGHT, FLOOR, MOUNTAINS, COL_WIDTH, ROW_LENGTH } = SpectrumTerrain;
+    const { FLOOR, COL_WIDTH, ROW_LENGTH } = SpectrumTerrain;
+    const { peakHeight: HEIGHT, mountains: MOUNTAINS } = this;
     this.head = (this.head + 1) % ROWS;
     this.laid++;
     const swell = 0.35 + this.in('swell') * 0.9;
@@ -171,7 +178,8 @@ export class SpectrumTerrain extends ThreeVisualization {
   }
 
   draw(ctx, dt) {
-    const { SPEED, ROW_LENGTH, DECAY, WAVE_SPEED } = SpectrumTerrain;
+    const { ROW_LENGTH, DECAY, WAVE_SPEED } = SpectrumTerrain;
+    const SPEED = this.speed;
 
     // Track the spectrum continuously, so a row laid between frames still
     // gets a peak that landed in one: fast attack, slow decay, like eq-bars.
@@ -304,7 +312,8 @@ void main() {
   for (int k = 0; k < 3; k++) {
     wave += exp(-abs(vDist - uWaves[k].x) * 0.35) * uWaves[k].y;
   }
-  vec3 lines = palette(t + 0.35) * (1.2 + wave * 2.5);
+  // A strong hit's wave turns the grid it crosses toward the peak colour.
+  vec3 lines = peak(palette(t + 0.35), wave) * (1.2 + wave * 2.5);
   vec3 col = mix(surface + palette(t + 0.35) * wave * 0.35, lines, line);
 
   // Fade to transparent toward the horizon rather than into a fog colour, so

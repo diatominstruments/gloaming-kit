@@ -118,25 +118,42 @@ export class Swoop {
 /**
  * GLSL for the palette: `palette(t)` is periodic in t with period 1. Declares
  * the uniforms paletteUniforms() creates.
+ *
+ * `peak(c, level)` pushes a colour toward the style's peakColor as `level`
+ * (a hit's strength, 0..1) rises past `peakAbove` — the GLSL twin of
+ * Visualization.peak(). With no peakColor set, uPeakKnee is parked above any
+ * level, so it returns `c` unchanged.
  */
 export const PALETTE_GLSL = /* glsl */ `
 uniform float uPsy;
 uniform vec3 uLine;
 uniform vec3 uAccent;
 uniform vec3 uBg;
+uniform vec3 uPeak;
+uniform float uPeakKnee;
 
 vec3 palette(float t) {
   vec3 psy = 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
   vec3 sty = mix(uLine, uAccent, 0.5 + 0.5 * sin(6.28318 * t));
   return mix(sty, psy, uPsy);
 }
+
+vec3 peak(vec3 c, float level) {
+  float k = clamp((level - uPeakKnee) / max(1.0 - uPeakKnee, 1e-3), 0.0, 1.0);
+  return mix(c, uPeak, k);
+}
 `;
+
+/** uPeakKnee when the style has no peak colour: above any level, so off. */
+const PEAK_OFF = 2;
 
 export const paletteUniforms = (THREE) => ({
   uPsy: { value: 1 },
   uLine: { value: new THREE.Color() },
   uAccent: { value: new THREE.Color() },
   uBg: { value: new THREE.Color() },
+  uPeak: { value: new THREE.Color() },
+  uPeakKnee: { value: PEAK_OFF },
 });
 
 /** Resolve the `palette` option once, at construction. */
@@ -149,6 +166,22 @@ export function updatePalette(viz, u) {
   u.uLine.value.copy(viz.color(s.lineColor));
   u.uAccent.value.copy(viz.color(s.accentColor ?? s.lineColor));
   u.uBg.value.copy(viz.color(s.background));
+  if (s.peakColor == null) {
+    u.uPeakKnee.value = PEAK_OFF;
+  } else {
+    u.uPeak.value.copy(viz.color(s.peakColor));
+    u.uPeakKnee.value = s.peakAbove ?? 0.8;
+  }
+}
+
+/**
+ * Push the THREE.Color `color` toward the style's peak colour, in place, as
+ * `level` rises past `peakAbove` — Visualization.peak() for instance colours.
+ * Leaves it alone when no peak colour is set.
+ */
+export function peakTint(viz, color, level) {
+  const t = viz.peakAmount(level);
+  return t > 0 ? color.lerp(viz.color(viz.style.peakColor), t) : color;
 }
 
 /** palette(t) in JS, into the THREE.Color `out` — for instance colours. */

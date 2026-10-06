@@ -179,6 +179,8 @@ export class Nebula extends ThreeVisualization {
     shape: { kind: 'enum', values: Object.keys(SHAPES), default: 'spiral' },
     arms: { kind: 'number', default: 3, min: 1, max: 6, step: 1 },
     count: { kind: 'number', default: 150000, min: 10000, max: 400000, step: 10000 },
+    size: { kind: 'number', default: 1, min: 0.3, max: 3, step: 0.1 },
+    swirl: { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
   };
 
   static RADIUS = 10;          // world units
@@ -196,13 +198,14 @@ export class Nebula extends ThreeVisualization {
     const THREE = this.THREE;
     this.psychedelic = isPsychedelic(this);
 
-    const count = Math.round(this.options.count ?? Nebula.options.count.default);
+    const count = this.option('count');
+    this.swirlRate = this.option('swirl');
     const rand = mulberry32(Math.floor(Math.random() * 1e9));
     const g = {
       rand,
       // Box–Muller; good enough for scattering motes.
       gauss: () => Math.sqrt(-2 * Math.log(Math.max(1e-6, rand()))) * Math.cos(TAU * rand()),
-      arms: Math.max(1, Math.min(6, Math.round(this.options.arms ?? Nebula.options.arms.default))),
+      arms: this.option('arms'),
     };
     const shapeName = this.options.shape ?? Nebula.options.shape.default;
     if (!(shapeName in SHAPES)) {
@@ -230,6 +233,7 @@ export class Nebula extends ThreeVisualization {
       uColor: { value: 0 },
       uTwinkle: { value: 0 },
       uPixels: { value: 1 },
+      uMote: { value: this.option('size') },
       uShocks: { value: Array.from({ length: SHOCKS }, () => new THREE.Vector2(-1e3, 0)) },
     };
     const points = new THREE.Points(geometry, new THREE.ShaderMaterial({
@@ -272,7 +276,7 @@ export class Nebula extends ThreeVisualization {
     const { RADIUS, SWIRL, ORBIT, SHOCK_SPEED, SHOCK_DECAY } = Nebula;
     const swirl = this.in('swirl');
     this.time += dt;
-    this.swirl += dt * (SWIRL[0] + swirl * SWIRL[1]);
+    this.swirl += dt * (SWIRL[0] + swirl * SWIRL[1]) * this.swirlRate;
     this.orbit += dt * (ORBIT[0] + swirl * ORBIT[1]);
     this.swoop.update(dt, ORBIT[0] + swirl * ORBIT[1]);
     // Colour phase, integrated: the band sets how fast the colour waves flow
@@ -327,6 +331,7 @@ export class Nebula extends ThreeVisualization {
 
 const VERTEX = /* glsl */ `
 ${PALETTE_GLSL}
+uniform float uMote;   // mote size multiplier (the size option)
 attribute vec4 seed;   // (radius 0–1, angle, height, random)
 
 uniform float uRadius;
@@ -373,7 +378,7 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
 
-  float size = 0.09 * (0.4 + seed.w * 1.2) * (1.0 + lit * 1.5);
+  float size = 0.09 * uMote * (0.4 + seed.w * 1.2) * (1.0 + lit * 1.5);
   float px = size * uPixels / max(-mv.z, 0.05);
   gl_PointSize = clamp(px, 1.5, 90.0);
 
@@ -390,7 +395,8 @@ void main() {
   // ripple outward through every shape.
   vec3 base = palette(along * 1.3 - uHue + seed.w * 0.08 + lit * 0.3);
   base *= 0.75 + uColor * 0.7;
-  vColor = base * bright;
+  // Motes a strong shock passes through flare toward the peak colour.
+  vColor = peak(base, lit) * bright;
 }
 `;
 

@@ -33,6 +33,8 @@ export class InfinityMirror extends FeedbackVisualization {
   };
   static options = {
     shape: { kind: 'enum', values: ['rect', 'circle'], default: 'rect' },
+    shrink: { kind: 'number', default: 0.9, min: 0.7, max: 0.98, step: 0.005 },
+    margin: { kind: 'number', default: 0.06, min: 0, max: 0.3, step: 0.01 },
   };
 
   static MARGIN = 0.06;       // rim inset, of the smaller screen dimension
@@ -53,7 +55,9 @@ export class InfinityMirror extends FeedbackVisualization {
 
   constructor(opts) {
     super(opts);
-    this.shape = this.options.shape === 'circle' ? 'circle' : 'rect';
+    this.shape = this.option('shape');
+    this.shrink = this.option('shrink');   // tunnel depth: nearer 1, more copies
+    this.margin = this.option('margin');
     this.reveal = 0;
     this.turn = 0;
     this.dir = 1;             // eased toward ±1
@@ -70,7 +74,7 @@ export class InfinityMirror extends FeedbackVisualization {
 
   /** Trace the rim, centred on the screen. */
   rimPath(ctx) {
-    const m = Math.min(this.width, this.height) * InfinityMirror.MARGIN;
+    const m = Math.min(this.width, this.height) * this.margin;
     ctx.beginPath();
     if (this.shape === 'circle') {
       ctx.arc(this.width / 2, this.height / 2, Math.min(this.width, this.height) / 2 - m, 0, Math.PI * 2);
@@ -103,7 +107,7 @@ export class InfinityMirror extends FeedbackVisualization {
     ctx.globalAlpha = base * (M.FLOOR + M.DEPTH * this.reveal);
     ctx.translate(vx, vy);
     ctx.rotate(angle);
-    ctx.scale(M.SHRINK, M.SHRINK);
+    ctx.scale(this.shrink, this.shrink);
     ctx.translate(-this.width / 2, -this.height / 2);
     this.drawPrevious(ctx);
     ctx.restore();
@@ -111,8 +115,8 @@ export class InfinityMirror extends FeedbackVisualization {
     // The rim itself, which the next frames carry down the tunnel.
     this.applyStyle(ctx);
     const glow = clamp01(M.RIM_ALPHA + M.RIM_GAIN * Math.max(this.reveal, this.flash));
-    ctx.strokeStyle = rgba(this.flash > 0.3 ? this.style.accentColor : this.style.lineColor, glow)
-      ?? this.style.lineColor;
+    const rim = this.flash > 0.3 ? (this.style.accentColor ?? this.style.lineColor) : this.style.lineColor;
+    ctx.strokeStyle = rgba(this.peak(rim, this.flash), glow);
     ctx.lineWidth = (this.style.lineWidth ?? 2) * (1 + this.flash);
     this.rimPath(ctx);
     ctx.stroke();

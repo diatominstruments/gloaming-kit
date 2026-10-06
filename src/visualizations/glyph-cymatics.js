@@ -51,6 +51,8 @@ export class GlyphCymatics extends Visualization {
     glyph:  glyphOption({ width: 9, height: 9, value: OCTAGON }),
     render: { kind: 'enum', values: ['nodes', 'relief', 'terraces'], default: 'nodes' },
     scale:  { kind: 'number', default: 1, min: 0.3, max: 3, step: 0.05 },
+    nodeWidth: { kind: 'number', default: 0.16, min: 0.05, max: 0.5, step: 0.01 },
+    terraces:  { kind: 'number', default: 5, min: 2, max: 12, step: 1 },
   };
 
   static CELL = 5;            // px per sample
@@ -75,13 +77,16 @@ export class GlyphCymatics extends Visualization {
   static FLASH_DECAY = 3;
   static LINE_KNEE = 0.65;
   static ACCENT_PEAK = 0.75;
+  static PEAK_GAIN = 0.85;    // how far the brightest pixels go to peakColor on an extreme hit
 
   constructor(opts) {
     super(opts);
     const G = GlyphCymatics;
     this.glyph = readGlyph(this);
-    this.render = G.options.render.values.includes(this.options.render) ? this.options.render : 'nodes';
-    this.scale = Math.max(0.05, Number(this.options.scale ?? 1) || 1);
+    this.render = this.option('render');
+    this.scale = this.option('scale');
+    this.nodeWidth = this.option('nodeWidth');   // how wide the bright nodal lines are
+    this.terraces = this.option('terraces');
     this.rand = mulberry32(((Date.now() % 100000) + 5) | 0);
     this.waves = this.readWaves();
     this.theta = this.rand() * Math.PI * 2;
@@ -240,8 +245,13 @@ export class GlyphCymatics extends Visualization {
     this.updateRamp();
     const bright = (G.BASE + G.GLOW_GAIN * this.glow + G.FLASH * this.flash) * 255;
     const { lut, render } = this;
+    // On an extreme hit the bright nodal lines flare toward the peak colour,
+    // the brighter the pixel the further.
+    const pk = this.peakAmount(this.flash) * G.PEAK_GAIN;
+    const [pr, pg, pb] = pk > 0 ? parseColor(this.style.peakColor) ?? [255, 255, 255] : [0, 0, 0];
     const data = this.image.data;
-    const nodeK = 1 / (G.NODE_WIDTH * G.NODE_WIDTH);
+    const nodeK = 1 / (this.nodeWidth * this.nodeWidth);
+    const TERRACES = this.terraces;
     for (let i = 0, o = 0; i < sum.length; i++, o += 4) {
       const s = sum[i];
       let b;
@@ -250,11 +260,11 @@ export class GlyphCymatics extends Visualization {
       } else if (render === 'terraces') {
         // Steps with a short ramp between them, so the risers stay clean
         // through the upscale instead of aliasing on the sample grid.
-        const lvl = (0.5 + 0.5 * s) * G.TERRACES;
+        const lvl = (0.5 + 0.5 * s) * TERRACES;
         const fl = Math.floor(lvl);
         let f = (lvl - fl - 0.5 + G.RISER) / (2 * G.RISER);
         f = f < 0 ? 0 : f > 1 ? 1 : f;
-        b = (fl + f * f * (3 - 2 * f)) / G.TERRACES;
+        b = (fl + f * f * (3 - 2 * f)) / TERRACES;
         b = b * b;
       } else {
         b = 0.5 + 0.5 * s;
@@ -262,9 +272,16 @@ export class GlyphCymatics extends Visualization {
       }
       let idx = (b * bright) | 0;
       if (idx > 255) idx = 255;
-      data[o] = lut[idx * 3];
-      data[o + 1] = lut[idx * 3 + 1];
-      data[o + 2] = lut[idx * 3 + 2];
+      if (pk > 0) {
+        const w = pk * b * b;
+        data[o] = lut[idx * 3] + (pr - lut[idx * 3]) * w;
+        data[o + 1] = lut[idx * 3 + 1] + (pg - lut[idx * 3 + 1]) * w;
+        data[o + 2] = lut[idx * 3 + 2] + (pb - lut[idx * 3 + 2]) * w;
+      } else {
+        data[o] = lut[idx * 3];
+        data[o + 1] = lut[idx * 3 + 1];
+        data[o + 2] = lut[idx * 3 + 2];
+      }
     }
     this.bufferCtx.putImageData(this.image, 0, 0);
     ctx.shadowBlur = 0;

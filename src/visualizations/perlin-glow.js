@@ -56,6 +56,8 @@ export class PerlinGlow extends Visualization {
     react: { kind: 'enum', values: PerlinGlow.REACTIONS, default: 'grow' },
     scale: { kind: 'number', default: 1, min: 0.25, max: 4, step: 0.05 },
     seed:  { kind: 'number', default: 1, min: 0, max: 9999, step: 1 },
+    octaves: { kind: 'number', default: 3, min: 1, max: 5, step: 1 },
+    warp:  { kind: 'number', default: 0.9, min: 0, max: 3, step: 0.05 },
   };
 
   static CELL = 8;           // px per noise sample
@@ -87,12 +89,15 @@ export class PerlinGlow extends Visualization {
   static LINE_KNEE = 0.7;    // ramp position where lineColor peaks
   static LINE_PEAK = 0.35;   // how much of lineColor the field ever shows
   static ACCENT_PEAK = 0.4;  // how far the brightest ridges lean to accent
+  static PEAK_GAIN = 0.85;    // how far the brightest pixels go to peakColor on an extreme hit
 
   constructor(opts) {
     super(opts);
     this.react = PerlinGlow.REACTIONS.includes(this.options.react) ? this.options.react : 'grow';
-    this.scale = Number(this.options.scale ?? 1) || 1;
-    this.noise = createNoise3D(Number(this.options.seed ?? 1) | 0);
+    this.scale = this.option('scale');
+    this.noise = createNoise3D(this.option('seed'));
+    this.octaves = { octaves: this.option('octaves') };
+    this.warp = this.option('warp');
     this.t = 0;
     this.glow = 0;
     this.flow = 0;
@@ -171,7 +176,7 @@ export class PerlinGlow extends Visualization {
 
     const { react, flare } = this;
     const grow = react === 'grow' ? G.GROW * flare : 0;
-    const warp = G.WARP + (react === 'curl' ? G.CURL * flare : 0);
+    const warp = this.warp + (react === 'curl' ? G.CURL * flare : 0);
     const layered = react === 'layers';
     const layerAlpha = G.LAYER_FLOOR + (1 - G.LAYER_FLOOR) * flare;
     const bright = G.BASE + G.GLOW_GAIN * clamp01(this.glow)
@@ -184,6 +189,9 @@ export class PerlinGlow extends Visualization {
 
     const { noise, lut, t } = this;
     const [ar, ag, ab] = this.accentDelta;
+    // On an extreme flare the brightest ridges flare toward the peak colour.
+    const pk = this.peakAmount(this.kick) * G.PEAK_GAIN;
+    const [pr, pg, pb] = pk > 0 ? parseColor(this.style.peakColor) ?? [255, 255, 255] : [0, 0, 0];
     const warpT = t * 0.6;
     const data = this.image.data;
     let o = 0;
@@ -195,7 +203,7 @@ export class PerlinGlow extends Visualization {
         // turns plain noise blobs into curling smoke-like shapes.
         const qx = noise(nx + 1.7, ny + 9.2, warpT);
         const qy = noise(nx + 8.3, ny + 2.8, warpT);
-        const n = fbm(noise, nx + warp * qx, ny + warp * qy, t, G.OCTAVES);
+        const n = fbm(noise, nx + warp * qx, ny + warp * qy, t, this.octaves);
         // Lifting the value moves every contour outward: zones grow in place.
         const v = clamp01(0.5 + n * G.SPREAD + grow);
         const idx = (clamp01(v * v * bright * G.EXPOSURE) * 255) | 0;
@@ -217,6 +225,15 @@ export class PerlinGlow extends Visualization {
           r += ar * k;
           g += ag * k;
           b += ab * k;
+        }
+        if (pk > 0) {
+          // Cubed ramp position, so only the ridges already near the top of
+          // the ramp take it; the body of the field keeps its colour.
+          const lum = idx / 255;
+          const w = pk * lum * lum * lum;
+          r += (pr - r) * w;
+          g += (pg - g) * w;
+          b += (pb - b) * w;
         }
         data[o] = r;
         data[o + 1] = g;

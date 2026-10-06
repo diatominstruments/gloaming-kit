@@ -36,9 +36,18 @@ export class Harmonograph extends Visualization {
   static BASE_TWIST = 0.35;    // rad/s of drift when mid sits at its average
   static TWIST_GAIN = 4.5;     // how hard mid deviation pushes the twist rate
   static TWIST_TAU = 0.25;     // seconds for the rate to reach a new target
+  static DAMPING = 0.12;       // how fast the pendulum dies away along the curve
+  static LOOPS = 5;            // curve length, in half-turns of the slower axis
+
+  static options = {
+    damping: { kind: 'number', default: Harmonograph.DAMPING, min: 0, max: 0.5, step: 0.01 },
+    loops:   { kind: 'number', default: Harmonograph.LOOPS, min: 2, max: 12, step: 0.5 },
+  };
 
   constructor(opts) {
     super(opts);
+    this.damping = this.option('damping');
+    this.loops = this.option('loops');
     this.phase = 0;
     this.twist = Harmonograph.BASE_TWIST;
     this.midFast = 0;          // mid, denoised
@@ -91,18 +100,20 @@ export class Harmonograph extends Visualization {
     this.phase += this.twist * dt;
 
     const [p, q] = this.currentRatio();
-    const damping = 0.12;
+    const { damping } = this;
+    const length = Math.PI * this.loops;
     const cx = this.width / 2;
     const cy = this.height / 2;
     const A = Math.min(this.width, this.height) * (0.3 + this.swell * 0.12 + this.in('size') * 0.06);
 
     this.applyStyle(ctx);
+    ctx.strokeStyle = this.peak(this.style.lineColor, this.swell);
     const cos = Math.cos(this.rotation);
     const sin = Math.sin(this.rotation);
 
     ctx.beginPath();
     for (let i = 0; i <= STEPS; i++) {
-      const tau = (i / STEPS) * Math.PI * 5;
+      const tau = (i / STEPS) * length;
       const decay = Math.exp(-damping * tau);
       const x = Math.sin(p * tau + this.phase) * decay;
       const y = Math.sin(q * tau) * decay;

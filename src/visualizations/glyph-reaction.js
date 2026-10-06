@@ -51,6 +51,7 @@ export class GlyphReaction extends Visualization {
     glyph:  glyphOption({ width: 9, height: 9, value: BLOTS }),
     regime: { kind: 'enum', values: Object.keys(GlyphReaction.REGIMES), default: 'coral' },
     scale:  { kind: 'number', default: 1, min: 0.4, max: 3, step: 0.05 },
+    seeds:  { kind: 'number', default: 10, min: 1, max: 40, step: 1 },
   };
 
   static CELL = 6;            // px per simulation cell
@@ -78,14 +79,16 @@ export class GlyphReaction extends Visualization {
   static FLASH_DECAY = 3;
   static LINE_KNEE = 0.6;     // ramp position where lineColor peaks
   static ACCENT_PEAK = 0.7;   // how far the brightest growth leans to accent
+  static PEAK_GAIN = 0.85;    // how far the brightest pixels go to peakColor on an extreme hit
 
   constructor(opts) {
     super(opts);
     const G = GlyphReaction;
     this.glyph = readGlyph(this);
     this.field = glyphField(this.glyph, { blur: G.MAP_BLUR });
-    this.regime = G.REGIMES[this.options.regime] ?? G.REGIMES.coral;
-    this.scale = Math.max(0.1, Number(this.options.scale ?? 1) || 1);
+    this.regime = G.REGIMES[this.option('regime')];
+    this.scale = this.option('scale');
+    this.seeds = this.option('seeds');   // drops of growth the screen starts with
     this.rand = mulberry32(((Date.now() % 100000) + 3) | 0);
     this.theta = this.rand() * Math.PI * 2;
     this.du = this.rand();
@@ -123,7 +126,7 @@ export class GlyphReaction extends Visualization {
     this.image = this.bufferCtx.createImageData(this.cols, this.rows);
     this.image.data.fill(255);
     this.updateMap();
-    for (let i = 0; i < G.SEEDS; i++) this.drop(this.rand() * this.cols, this.rand() * this.rows);
+    for (let i = 0; i < this.seeds; i++) this.drop(this.rand() * this.cols, this.rand() * this.rows);
     for (let i = 0; i < G.WARM; i++) this.step();
   }
 
@@ -250,14 +253,24 @@ export class GlyphReaction extends Visualization {
     const span = 1 / (G.HIGH - G.LOW);
     const { v, lut } = this;
     const data = this.image.data;
+    // On an extreme hit the densest growth flares toward the peak colour.
+    const pk = this.peakAmount(this.flash) * G.PEAK_GAIN;
+    const [pr, pg, pb] = pk > 0 ? parseColor(this.style.peakColor) ?? [255, 255, 255] : [0, 0, 0];
     for (let i = 0, o = 0; i < v.length; i++, o += 4) {
       let t = (v[i] - G.LOW) * span;
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       let idx = (Math.sqrt(t) * bright) | 0;
       if (idx > 255) idx = 255;
-      data[o] = lut[idx * 3];
-      data[o + 1] = lut[idx * 3 + 1];
-      data[o + 2] = lut[idx * 3 + 2];
+      if (pk > 0) {
+        const w = pk * t;
+        data[o] = lut[idx * 3] + (pr - lut[idx * 3]) * w;
+        data[o + 1] = lut[idx * 3 + 1] + (pg - lut[idx * 3 + 1]) * w;
+        data[o + 2] = lut[idx * 3 + 2] + (pb - lut[idx * 3 + 2]) * w;
+      } else {
+        data[o] = lut[idx * 3];
+        data[o + 1] = lut[idx * 3 + 1];
+        data[o + 2] = lut[idx * 3 + 2];
+      }
     }
     this.bufferCtx.putImageData(this.image, 0, 0);
     ctx.shadowBlur = 0;

@@ -31,6 +31,8 @@ export class Moire extends Visualization {
   };
   static options = {
     pattern: { kind: 'enum', values: ['rings', 'lines'], default: 'rings' },
+    spacing: { kind: 'number', default: 9, min: 4, max: 30, step: 0.5 },
+    alpha:   { kind: 'number', default: 0.28, min: 0.05, max: 1, step: 0.01 },
   };
 
   static SPACING = 9;         // px between rings or lines
@@ -52,7 +54,9 @@ export class Moire extends Visualization {
 
   constructor(opts) {
     super(opts);
-    this.pattern = this.options.pattern === 'lines' ? 'lines' : 'rings';
+    this.pattern = this.option('pattern');
+    this.spacing = this.option('spacing');   // px between rings or lines
+    this.alpha = this.option('alpha');
     this.shift = 0;
     this.turnRate = 0;
     this.angle = Math.random() * Math.PI * 2;
@@ -64,7 +68,7 @@ export class Moire extends Visualization {
   }
 
   rings(path, x, y, reach) {
-    for (let r = Moire.SPACING; r < reach; r += Moire.SPACING) {
+    for (let r = this.spacing; r < reach; r += this.spacing) {
       path.moveTo(x + r, y);
       path.arc(x, y, r, 0, Math.PI * 2);
     }
@@ -73,7 +77,7 @@ export class Moire extends Visualization {
   grating(path, cx, cy, angle, reach) {
     const c = Math.cos(angle);
     const s = Math.sin(angle);
-    for (let o = -reach; o <= reach; o += Moire.SPACING) {
+    for (let o = -reach; o <= reach; o += this.spacing) {
       // A line `o` from the centre along the normal, spanning the diagonal.
       const px = cx - s * o;
       const py = cy + c * o;
@@ -99,7 +103,7 @@ export class Moire extends Visualization {
       this.grating(path, cx, cy, this.angle - cross / 2, reach);
       this.grating(path, cx, cy, this.angle + cross / 2, reach);
     } else {
-      const sep = M.SPACING * (M.RING_BASE + M.RING_GAIN * this.shift + M.RING_KICK * this.kick);
+      const sep = this.spacing * (M.RING_BASE + M.RING_GAIN * this.shift + M.RING_KICK * this.kick);
       const dx = (Math.cos(this.angle) * sep) / 2;
       const dy = (Math.sin(this.angle) * sep) / 2;
       const reach = Math.hypot(cx, cy) + sep;
@@ -109,7 +113,7 @@ export class Moire extends Visualization {
 
     ctx.shadowBlur = 0;
     ctx.lineWidth = M.LINE_WIDTH;
-    ctx.strokeStyle = rgba(this.style.lineColor, M.ALPHA);
+    ctx.strokeStyle = rgba(this.peak(this.style.lineColor, this.kick), this.alpha);
     ctx.stroke(path);
   }
 }
