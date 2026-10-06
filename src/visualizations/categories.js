@@ -50,7 +50,7 @@ export const CATEGORIES = Object.freeze([
   {
     id: CATEGORY.GLYPHS,
     label: 'Glyphs',
-    description: 'Structures grown from a small drawing: each takes a `glyph` option, a grid of cells at a few strengths, and builds from it.',
+    description: 'Textures, tessellations and growth built from a small drawing: each takes a `glyph` option, a grid of cells at a few strengths, and reads it as a field, a rule or a spectrum — never as a picture.',
   },
   {
     id: CATEGORY.BACKGROUNDS,

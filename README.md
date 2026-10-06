@@ -318,21 +318,24 @@ each loop, so passes come in from different directions.
 | `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
 | `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell` (default), or `600-cell` (720 edges); and `distance` | `rolling-ball` |
 
-**Glyphs** — structures grown from a small drawing the viewer makes. Each
-takes a `glyph` option, a coarse grid of cells at a few strengths; see
-[Glyphs](#glyphs) for the format and for building an editor. The 3D ones
-take a `palette` option like the Spaces, and fall back to the 2D
-`glyph-window` growing from the same drawing.
+**Glyphs** — textures, tessellations and growth built from a small drawing
+the viewer makes. Each takes a `glyph` option, a coarse grid of cells at a
+few strengths; see [Glyphs](#glyphs) for the format and for building an
+editor. The drawing is never put on screen: each one reads it as something
+else — a field, a crystal's habit, a branching rule, a map of chemistry, a
+spectrum of waves — and fills the screen with what that structure makes of
+it, so there is never one copy of the drawing to find and never a grid.
+`glyph-crystal`, `glyph-reaction` and `glyph-cymatics` fill the screen and
+draw in the background layer; the other two are transparent and draw in
+main.
 
 | id | what it does |
 |----|--------------|
-| `glyph-mosaic` | a crystal garden grown along the drawing: the drawing is a plan on the ground, and growth starts at the outer end of each stroke and travels along it cell to cell, a crystal sprouting at each one as the front arrives — its root leaning the way the growth came — and branching into smaller solids two to four levels deep. Fully grown, it holds, dissolves in the order it grew, and regrows from where the last growth ended with every crystal mutated, so it is never the same garden twice. Grey cells grow smaller, dimmer crystals; colour flows along the drawing. Hits send a wave of light along the strokes and spur the growth. Option `shape`: `crystal` (default; branching prisms), `coral` (wide budding lumps), `spire` (tall forking diamonds); and `distance`. Draws its best from a drawing of long strokes — the default is a spiral |
-| `glyph-fractal` | a fractal grown from the drawing: it is read into elements (option `interpret`, default `contour`), each becomes a map shrinking the whole figure into it — moved, turned and stretched to match — and the maps are played as a chaos game. Copies strung along an outline curl into lacy filaments, a few stretched blobs grow fronds, a rosette grows whorls, and `cells` makes the drawing out of copies of the drawing — the reading to use when the drawing itself should show. Option `evolve` (default `drift`) keeps it alive: it mutates, grows, or morphs between readings rather than holding one shape — see [Evolution](#evolution). Option `form`: `bloom` (default) is a point cloud whose copies tilt out of the plane like petals, mostly-black elements one way and mostly-grey the other; `solid` nests the copies in 3D — a crystal — with a lit model of the drawing as every piece at the bottom. Option `volume` (solid only) reads the drawing as a picture of a 3D structure for those pieces — `hull` (default), `lathe` or `flat`; see [Volumes](#volumes) — and with `interpret: 'cells'` the copies sit at that structure's cells too, so a square ring grows the Menger sponge. The other readings are flat, so their elements are revolved into three planes. Option `shape` (solid only) sets what that model is made of: `blocks` (default; a block per cell), `pipes` (tubes joining neighbouring cells), `spheres` or `diamonds` (one per cell, joined by thin rods), or `box` (a single plain box, as before). Heavier shapes nest one level fewer on a busy drawing, and lose roundness on a very busy one, to keep the triangle count down. The `fold` input (bass) sets the tilt, `spin` the copies' twist, and hits swell them. Option `distance` as `nebula` |
-| `glyph-automaton` | the drawing as the first generation of a cellular automaton, each generation a slice of lit cubes stacked into a tower that sinks as new ones land on top — gliders leave diagonal tubes, oscillators pillars. Bass hits step a generation and light that slice for good, so the tower's sides record where the beats fell; snare hits plant the drawing again; it replants itself when the pattern dies or repeats. Option `rule`: `brain` (default; Brian's Brain), `life`, `star-wars` — black cells start alive and grey ones dying. Option `distance` |
-| `glyph-tunnel` | flight down a tunnel built from the drawing: black cells are lit stone, grey ones panes of translucent light, repeated `repeat` times round it with every other copy mirrored. Option `wrap`: `wall` (default) carves it in relief on the wall, rows running down the tunnel; `section` makes every ring the whole drawing bent into an annulus, twisting into a spiral. Hits send swells down it |
-| `glyph-city` | flight between two endless cities planned from the drawing — filled cells are towers, black tall and grey low, the plan tiled to the horizon and hung upside down overhead. Each column is a band of the spectrum, so every street rises and falls with its part of the mix. Edges and streets glow; hits roll light down the streets. Option `twist` (`off`, `low`, `med`, `high`) corkscrews the two cities round each other ahead; `speed`. Ray-marched in the background layer at half resolution |
-| `glyph-flow` | the drawing as a stencil far off in the dark, every filled cell a hole: light jets through each hole and streams out of the distance toward the viewer, so a single dot is one narrow jet from the middle of the screen. Grey cells are smaller holes pouring the accent colour; jets snake and the stream twists with `swirl`. Hits blast a wider, brighter spray through that travels toward you as a front. Options `distance` (`near`, `med`, `far`) and `count` (a cap; streaks are shared out by hole size) |
-| `glyph-window` | a rose window grown from the drawing: it is read into a handful of elements (option `interpret`, default `rosette`; see [Glyphs](#glyphs)), each holding a translucent petal with the whole arrangement nested inside it again, two to five levels deep. Petals add up like stained glass and turn on their own phases, compounding down the levels so the window swirls; option `evolve` (default `drift`) keeps the structure itself changing. Hits swell and flash them. 2D, and what the others draw when 3D is off |
+| `glyph-current` | the drawing as a stream function: tiled and blurred into a smooth field, its filled cells are hills, and a current runs along their contours — circling every drawn shape, fast on the steep rims and slow in the flats between. Thousands of motes ride it, leaving fading trails, and what builds up is a grain of eddies whose whorls are the drawing's shapes, repeated and mirrored across the screen under a slow turn, so no two line up. Hits quicken and brighten the current; `flow` sets its pace, `turn` how fast the field turns beneath it. Options `count` (motes), `scale` (size of one copy of the drawing), `seed` |
+| `glyph-crystal` | the drawing as a crystal habit: its silhouette, seen from its centre, is how fast a crystal grows in each direction, so a cross grows as a four-pointed star, a ring as a disc, a diagonal stroke as a long lozenge. Seeds land across the screen and grow at that shape, each at its own turn, and where two fronts meet they stop — the screen tessellates into cells whose every edge is where two of the drawing's shapes collided. A pixel keeps whichever front reached it first, in the colour of that moment, so each crystal carries rings: a bright nucleus fading outward, hue turning as it grows, and a bright band for every hit that landed while it grew. When the screen is full a new generation seeds on top and grows over the old, which sinks into dusk. Options `size` (`small`, `med`, `large`: how many seeds a generation gets), `grain` (`rings`, `flat`), `edges` (`smooth`, `faceted`) |
+| `glyph-dendrite` | the drawing as a branching rule: each row is one generation of growth — a filled cell is a child branch, its column the angle it leaves at (left of centre turns left), its strength how long and thick it grows; a centre cell carries the trunk on at full stride, a row with no centre forks the trunk, an empty row grows straight. Tips follow the rows in turn, over and over, finer each cycle. Seeds start at the screen's edges and grow inward like frost on a window, wandering a little and stopping dead when they meet anything already grown, so the trees pack the screen into territories; when nothing is left growing it thaws — fades out while new seeds start over it. Hits make a share of the tips branch at once and land a seed. Options `spread` (`narrow`, `wide`: how far the outermost column turns a branch), `from` (`edges`, `centre`, `scatter`), `seed` |
+| `glyph-reaction` | the drawing as a map of chemistry: two substances react and diffuse across the screen (Gray–Scott reaction–diffusion), and the texture that grows — spots, worms, coral, a maze — depends on two rates. The drawing, tiled and softened, sets them: one texture grows where it is empty, another where it is black, and grey is the country between where the two fight, so the drawing shows only as the weather of the texture, several copies across the screen, turning slowly. Hits drop new seeds of growth; `flow` is how fast the chemistry runs. Options `regime` (`coral`, `maze`, `worms`, `spots`: which pair of textures), `scale` |
+| `glyph-cymatics` | the drawing as a spectrum: each filled cell is a plane wave — its offset from the centre the wave's direction and frequency, its strength the amplitude — and the screen shows their sum as a plate dusted with sand would, bright along the nodal lines where the waves cancel. Cells on a square make a square lattice of ripples, cells on a hexagon a honeycomb, a single cell plain stripes; every drawing tessellates the whole screen and none looks like the dots that made it. The waves drift in phase at their own rates so the pattern crawls, `detail` (treble) lifts the finer waves, `turn` turns the spectrum, and hits lurch every phase at once. Options `render` (`nodes`, `relief`, `terraces`), `scale` (wavelength of the drawing's unit frequency) |
 
 **Backgrounds** — full-screen fields that draw in the background layer (see
 [Layers](#layers)), so they sit behind anything else in the window whatever
@@ -426,13 +429,11 @@ intensity plus 0.25 relative.
 | `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
-| `glyph-mosaic` | `pulse` ← bass | `grow` ← int mid (smoothed), `sway` ← int highMid, `glow` ← mix treble |
-| `glyph-window` | `pulse` ← bass | `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
-| `glyph-fractal` | `jolt` ← bass | `fold` ← 0.5 int bass + 0.5 rel bass, `spin` ← int mid, `mutate` ← int mid (smoothed), `glow` ← mix treble |
-| `glyph-automaton` | `step` ← bass, `stamp` ← snare | `rate` ← int mid, `glow` ← mix treble |
-| `glyph-tunnel` | `ripple` ← bass | `spin` ← int mid, `glow` ← mix treble |
-| `glyph-city` | `pulse` ← bass | `twist` ← int mid, `shimmer` ← mix treble, `travel` ← int rms (smoothed 2 s) |
-| `glyph-flow` | `surge` ← bass | `flow` ← int rms (smoothed), `swirl` ← int mid, `glow` ← mix treble |
+| `glyph-current` | `surge` ← bass | `flow` ← int rms, `turn` ← int mid, `glow` ← mix treble |
+| `glyph-crystal` | `seed` ← bass | `grow` ← int mid, `glow` ← mix treble |
+| `glyph-dendrite` | `sprout` ← bass | `grow` ← int mid, `glow` ← mix treble |
+| `glyph-reaction` | `bloom` ← bass | `flow` ← int mid, `glow` ← int rms |
+| `glyph-cymatics` | `pulse` ← bass | `glow` ← int rms, `turn` ← int mid, `detail` ← mix treble |
 | `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
 | `infinity-mirror` | `flip` ← snare | `reveal` ← rel bass (fast rise, slow fall), `turn` ← mid |
 | `kaleidoscope` | `shift` ← snare | `reveal` ← int rms, `spin` ← mid |
@@ -515,20 +516,22 @@ revolution, the longest segment drawn goes from 3.1× the canvas diagonal at
 
 ## Glyphs
 
-The Glyphs visualizations build their structure from a drawing: a coarse grid
-of cells, each empty or filled at one of a few strengths. The idea is that a
-client gives the viewer a small canvas to click on — once for grey, again for
-black — and passes the result in as an option:
+The Glyphs visualizations take a drawing as input: a coarse grid of cells,
+each empty or filled at one of a few strengths. The idea is that a client
+gives the viewer a small canvas to click on — once for grey, again for black
+— and passes the result in as an option:
 
 ```js
-{ id: VIZ.GLYPH_FRACTAL, options: { glyph: [
-  '2..1..2',
-  '.2.1.2.',
-  '..222..',
-  '1122211',
-  '..222..',
-  '.2.1.2.',
-  '2..1..2',
+{ id: VIZ.GLYPH_CRYSTAL, options: { glyph: [
+  '....2....',
+  '....2....',
+  '.1..2..1.',
+  '..1.2.1..',
+  '222222222',
+  '..1.2.1..',
+  '.1..2..1.',
+  '....2....',
+  '....2....',
 ] } }
 ```
 
@@ -542,7 +545,7 @@ a drawing saved with a timeline comes back with it.
 should offer:
 
 ```js
-{ name: 'glyph', kind: 'grid', width: 7, height: 7, levels: 2, default: [ /* rows */ ] }
+{ name: 'glyph', kind: 'grid', width: 9, height: 9, levels: 2, default: [ /* rows */ ] }
 ```
 
 `levels` is the number of strengths above empty (2: grey and black). The size
@@ -565,69 +568,39 @@ g.filled();                             // [{ x, y, level, weight }, …]
 g.toRows();                             // back to strings
 ```
 
-### Interpretations
+### Readings
 
-A drawing is an abstract input, not a picture to reproduce, so `glyph-window`
-and `glyph-fractal` don't copy cells onto the screen. They first *read* the
-drawing into a handful of elements — oriented, stretched blobs, each with a
-position, angle, two sizes, a weight (how much was drawn black) and a hue —
-and build from those. Option `interpret` picks the reading, independently of
-what the visualization then builds, so any reading pairs with either one:
+The drawing is an abstract input, not a picture to reproduce. None of the
+visualizations copies cells onto the screen or shows one copy of the
+drawing; each reads it as the input to some other structure and shows what
+that structure does with it, everywhere at once. The readings are:
 
-| `interpret` | how the drawing is read |
-|-------------|-------------------------|
-| `contour` | blurred into a smooth shape, with elements strung evenly along its outline, each turned to follow it. Blocky cells become flowing curves: a ring becomes a loop, a line a long hairpin |
-| `clusters` | touching cells merge into blobs, large regions split into a few, and each blob becomes one element at its centre of mass, sized by its mass and stretched along its own grain. Few, uneven, organic pieces |
-| `rosette` | wrapped round a circle — columns go round, rows run from the rim (top) to the hub (bottom) — with every unbroken run down a column becoming one petal pointing outward. Any drawing becomes a radial flower |
-| `cells` | taken literally: one element per filled cell, in place and the size of its cell (grey cells smaller). The one reading that keeps the grid, so in `glyph-fractal` the figure is the drawing made of copies of the drawing, legible at every scale |
+| visualization | the drawing is read as | what fills the screen |
+|---------------|------------------------|-----------------------|
+| `glyph-current` | a stream function — a smooth, tiled field whose hills are the filled cells | a texture: the grain of motes riding the field's curl |
+| `glyph-crystal` | a crystal habit — how far the filled cells reach in each direction from the centre | a tessellation, grown: fronts of that shape advancing until they meet |
+| `glyph-dendrite` | a branching rule — each row the children a branch splits into | a growth pattern: trees following the rule, packing the screen |
+| `glyph-reaction` | a map of two reaction rates, tiled and softened | a texture: reaction–diffusion growth changing character region by region |
+| `glyph-cymatics` | a spectrum — each filled cell a plane wave, by its offset from the centre | a tessellation: the interference pattern of the waves |
 
-Every reading but `cells` is normalized the same way — centred, fitted to the figure,
-and sized so the elements' areas add up to most of it with none too large —
-so placing a copy of the whole figure in each one is always a contraction,
-as a fractal needs. (`cells` is a contraction already: each copy is one
-cell's share of the drawing's width.) The readings are in
-[src/visualizations/glyph-interpret.js](src/visualizations/glyph-interpret.js)
-as `interpret(glyph, name)`, for any visualization to use.
+Two of the readings are shared, in
+[src/visualizations/glyph.js](src/visualizations/glyph.js), for any
+visualization to use:
 
-### Volumes
-
-A 3D visualization can also read the drawing as a picture of something
-solid. Option `volume` (on `glyph-fractal`'s solid form) picks how:
-
-| `volume` | the structure |
-|----------|---------------|
-| `hull` | what looks like the drawing from the front, from the side and from above: a cell is solid where all three views are drawn. A cross becomes a 3D cross, a square ring the Menger sponge's first step, a diagonal a diagonal through the cube. A drawing too lopsided to agree with itself from three sides turns on a lathe instead |
-| `lathe` | the drawing spun about its vertical axis, each side of the centre folded onto the other, on eight ribs — a dot off the axis becomes a ring, a column a vase or lantern |
-| `flat` | the drawing as it is, one cell deep |
-
-Neighbouring cells are linked — across faces, and across edges or corners
-only where nothing else in between is solid — for shapes that join them.
-The volumes are in
-[src/visualizations/glyph-volume.js](src/visualizations/glyph-volume.js) as
-`buildVolume(glyph, mode)`.
-
-### Evolution
-
-A reading is a snapshot; option `evolve` keeps it alive, so the structure
-itself changes over time rather than only turning and swelling. It works on
-the elements, so it pairs with any reading and with either visualization:
-
-| `evolve` | what happens |
-|----------|--------------|
-| `drift` | every element wanders on its own slow noise path — moving, turning, stretching and swelling a little — so the figure mutates continuously and never repeats. Hits jolt a few elements at random: a mutation on the beat that heals slowly |
-| `grow` | the figure assembles itself element by element along the reading, each one sprouting out of the one before. Once most are grown the oldest start withering as new ones sprout, so a growth front travels round it forever, and every regrowth is a mutation (a new turn and stretch). Hits sprout the next element at once |
-| `morph` | the figure flows between the readings in turn — contour, clusters, rosette, cells — holding each a while, elements sliding, turning and resizing into their new places, extras sprouting from or shrinking into their neighbours. Hits hurry the next change along |
-| `still` | the reading as it is |
-
-The `mutate` input sets how fast (mid by default). A changing figure wanders
-off the origin, so both visualizations follow its centre. Evolution is in
-[src/visualizations/glyph-evolve.js](src/visualizations/glyph-evolve.js), as
-an `Evolver` any visualization built on elements can use.
+- `glyphField(glyph)` returns `field(u, v)`, 0–1 for any real `(u, v)`
+  where one unit is one copy of the drawing: each filled cell a round
+  Gaussian blot, the drawing mirrored at every border so copies join without
+  seams. Sampled under a rotation and a drift, no copy lines up with any
+  other on screen. `field.gradMax` is its steepest slope, for scaling
+  anything that follows its gradient.
+- `radialProfile(glyph, { n, kappa, ratio })` returns `n` speeds round the
+  compass: how far the filled cells reach in each direction from the centre,
+  smoothed with a kernel of sharpness `kappa` and scaled so the slowest
+  direction is 1 and the fastest at most `ratio`.
 
 To write one, declare the option with `glyphOption()` and read it with
-`readGlyph(this)`, both in
-[src/visualizations/glyph.js](src/visualizations/glyph.js); that file also
-holds every built-in default drawing.
+`readGlyph(this)`, both in the same file; that file also holds every
+built-in default drawing.
 
 ## Layers
 
@@ -673,7 +646,7 @@ describe('thomas');
 
 catalog();
 // [{ id: 'classic', label: 'Classic', description: '…', visualizations: [ /* describe() of each */ ] },
-//  { id: 'motion', … }, { id: 'chaos', … }, { id: 'attractors', … }]
+//  { id: 'motion', … }, { id: 'spots', … }, { id: 'attractors', … }]
 ```
 
 `catalog()` lists categories in `CATEGORIES` order and visualizations in

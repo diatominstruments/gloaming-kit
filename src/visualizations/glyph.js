@@ -1,18 +1,21 @@
 /**
- * Glyphs — visualizations that build their structure from a small drawing.
+ * Glyphs — visualizations that take a small drawing as input and build
+ * textures, tessellations and growth from it.
  *
  * A glyph is a coarse grid of cells, each empty or filled at one of a few
  * strengths. A client offers the viewer a canvas to click cells on (the demo's
  * timeline editor does), and passes the result as an ordinary option:
  *
- *   { id: 'glyph-fractal', options: { glyph: [
- *     '2..1..2',
- *     '.2.1.2.',
- *     '..222..',
- *     '1122211',
- *     '..222..',
- *     '.2.1.2.',
- *     '2..1..2',
+ *   { id: 'glyph-crystal', options: { glyph: [
+ *     '....2....',
+ *     '....2....',
+ *     '.1..2..1.',
+ *     '..1.2.1..',
+ *     '222222222',
+ *     '..1.2.1..',
+ *     '.1..2..1.',
+ *     '....2....',
+ *     '....2....',
  *   ] } }
  *
  * One string per row, one character per cell: a digit is that strength,
@@ -21,6 +24,12 @@
  * for a client that keeps the grid as a matrix. Values past `levels` clamp.
  * Either way it is plain JSON, so it travels in timeline config like any
  * other option.
+ *
+ * The drawing is never put on screen. Each visualization reads it as
+ * something else — a potential field, a crystal's habit, a branching rule, a
+ * map of chemistry, a spectrum of waves — and what you see is what that
+ * structure does with it, repeated across the whole canvas. The readings are
+ * at the bottom of this file, shared so any visualization can use them.
  *
  * A visualization declares the option with glyphOption(), which describe()
  * reports as `kind: 'grid'` with the canvas size and number of strengths an
@@ -144,105 +153,192 @@ export function readGlyph(viz, name = 'glyph') {
 }
 
 /*
- * Default drawings, one per visualization, each chosen to show off what that
- * one does with a drawing. Kept here so they are easy to compare and reuse.
+ * Readings — ways of turning a drawing into something continuous, shared by
+ * the visualizations. None of them keeps the grid.
  */
 
-// Radially symmetric, sparse enough that the copies stay distinct and
-// recursion shows two or three levels down.
-export const FLOWER = [
-  '2..1..2',
-  '.2.1.2.',
-  '..222..',
-  '1122211',
-  '..222..',
-  '.2.1.2.',
-  '2..1..2',
+/**
+ * The drawing as a smooth, endlessly tiled scalar field: `field(u, v)` is
+ * 0–1 for any real (u, v), where one unit is one copy of the drawing. Each
+ * filled cell is a round Gaussian blot `blur` cells wide, so the field has
+ * no trace of the cells' squareness; the tiling mirrors the drawing at every
+ * border, so copies join without seams. Sampled under a rotation and a
+ * drift, no copy lines up with any other on screen.
+ *
+ * The field is tabulated once at `res` samples per cell and read back
+ * bilinearly. `field.gradMax` is the steepest slope in it, per tile unit,
+ * for scaling anything that follows its gradient.
+ */
+export function glyphField(glyph, { blur = 0.55, res = 16 } = {}) {
+  const { width: w, height: h } = glyph;
+  const W = w * res;
+  const H = h * res;
+  const su = blur / w;
+  const sv = blur / h;
+  const cut = 4;
+  const table = new Float32Array(W * H);
+  const cells = glyph.filled();
+  let peak = 0;
+  for (let j = 0; j < H; j++) {
+    const v = (j + 0.5) / H;
+    for (let i = 0; i < W; i++) {
+      const u = (i + 0.5) / W;
+      let sum = 0;
+      for (const { x, y, weight } of cells) {
+        const uc = (x + 0.5) / w;
+        const vc = (y + 0.5) / h;
+        // The cell and its mirror images across the tile's four borders.
+        for (const um of [uc, -uc, 2 - uc]) {
+          const du = (u - um) / su;
+          if (du > cut || du < -cut) continue;
+          for (const vm of [vc, -vc, 2 - vc]) {
+            const dv = (v - vm) / sv;
+            if (dv > cut || dv < -cut) continue;
+            sum += weight * Math.exp(-0.5 * (du * du + dv * dv));
+          }
+        }
+      }
+      table[j * W + i] = sum;
+      if (sum > peak) peak = sum;
+    }
+  }
+  if (peak > 0) for (let i = 0; i < table.length; i++) table[i] = Math.min(1, table[i] / peak);
+
+  const fold = (t) => { t %= 2; if (t < 0) t += 2; return t > 1 ? 2 - t : t; };
+  const field = (u, v) => {
+    const fx = fold(u) * W - 0.5;
+    const fy = fold(v) * H - 0.5;
+    let x0 = Math.floor(fx);
+    let y0 = Math.floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const x1 = Math.min(W - 1, x0 + 1);
+    const y1 = Math.min(H - 1, y0 + 1);
+    x0 = Math.max(0, x0);
+    y0 = Math.max(0, y0);
+    const a = table[y0 * W + x0] + (table[y0 * W + x1] - table[y0 * W + x0]) * tx;
+    const b = table[y1 * W + x0] + (table[y1 * W + x1] - table[y1 * W + x0]) * tx;
+    return a + (b - a) * ty;
+  };
+  let gradMax = 0;
+  for (let j = 1; j < H - 1; j++) {
+    for (let i = 1; i < W - 1; i++) {
+      const gx = (table[j * W + i + 1] - table[j * W + i - 1]) * W / 2;
+      const gy = (table[(j + 1) * W + i] - table[(j - 1) * W + i]) * H / 2;
+      gradMax = Math.max(gradMax, gx * gx + gy * gy);
+    }
+  }
+  field.gradMax = Math.max(1e-6, Math.sqrt(gradMax));
+  return field;
+}
+
+/**
+ * The drawing's silhouette as seen from its centre, as `n` speeds round the
+ * compass: how far the filled cells reach in each direction, smoothed with a
+ * kernel of sharpness `kappa` (higher is spikier) and scaled so the slowest
+ * direction is 1 and the fastest at most `ratio`. A cross reads as four
+ * spikes, a ring as a circle, a diagonal stroke as a long lozenge. Angle 0 is
+ * to the right and angles run clockwise on screen.
+ */
+export function radialProfile(glyph, { n = 72, kappa = 14, ratio = 2.6 } = {}) {
+  const cx = (glyph.width - 1) / 2;
+  const cy = (glyph.height - 1) / 2;
+  const reach = Math.max(1, Math.hypot(cx, cy));
+  const out = new Float32Array(n).fill(0.05);
+  for (const { x, y, weight } of glyph.filled()) {
+    const dx = x - cx;
+    const dy = y - cy;
+    const r = Math.hypot(dx, dy) / reach;
+    if (r < 1e-3) continue;
+    const a = Math.atan2(dy, dx);
+    for (let i = 0; i < n; i++) {
+      const d = Math.cos((i / n) * Math.PI * 2 - a) - 1;
+      out[i] += weight * r * r * Math.exp(kappa * d);
+    }
+  }
+  let lo = Infinity;
+  let hi = 0;
+  for (const v of out) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const span = Math.min(ratio, hi / Math.max(lo, 1e-6));
+  for (let i = 0; i < n; i++) out[i] = 1 + (span - 1) * ((out[i] - lo) / Math.max(hi - lo, 1e-6));
+  return out;
+}
+
+/*
+ * Default drawings, one per visualization, each chosen to show what that
+ * reading does with a drawing. Kept here so they are easy to compare and
+ * reuse.
+ */
+
+// Three strong whorls and a weak one, off-centre: as a potential this is
+// hills and a hollow, and the current circles each of them.
+export const WHORLS = [
+  '.........',
+  '..22.....',
+  '.2222..1.',
+  '..22..111',
+  '.......1.',
+  '....22...',
+  '...2222..',
+  '....22...',
+  '.........',
 ];
 
-// A ring with a broken inner ring and a core. Symmetric drawings evolve
-// symmetrically under the automaton rules, which is most of their charm.
-export const MANDALA = [
-  '................',
-  '.....222222.....',
-  '...2222222222...',
-  '..222......222..',
-  '..22...11...22..',
-  '.22..........22.',
-  '.22..........22.',
-  '.22.1..22..1.22.',
-  '.22.1..22..1.22.',
-  '.22..........22.',
-  '.22..........22.',
-  '..22...11...22..',
-  '..222......222..',
-  '...2222222222...',
-  '.....222222.....',
-  '................',
+// A four-armed star with faint diagonals: crystals grow as pointed stars
+// with soft shoulders, and the tessellation they make is of stars.
+export const STAR = [
+  '....2....',
+  '....2....',
+  '.1..2..1.',
+  '..1.2.1..',
+  '222222222',
+  '..1.2.1..',
+  '.1..2..1.',
+  '....2....',
+  '....2....',
 ];
 
-// Chevrons over a row of diamonds: reads as a carved frieze on a tunnel wall.
-export const CHEVRONS = [
-  '2..............2',
-  '.2............2.',
-  '..2..........2..',
-  '...2...11...2...',
-  '....2..11..2....',
-  '.....2....2.....',
-  '......2..2......',
-  '.......22.......',
-  '................',
-  '...1........1...',
-  '..111......111..',
-  '...1........1...',
+// A fern, read as rules row by row: a centre cell carries the trunk on,
+// cells either side of it throw out laterals, and a row with no centre
+// forks the trunk in two. The laterals then follow the same rules, so each
+// one is a smaller fern.
+export const FERN = [
+  '....2....',
+  '.2.....2.',
+  '....2....',
+  '..2...2..',
+  '....1....',
+  '.2..2..2.',
+  '....2....',
+  '...2.2...',
+  '....2....',
 ];
 
-// Recognisable from any height, which matters for a city seen in flight.
-export const INVADER = [
-  '............',
-  '............',
-  '...2.....2..',
-  '....2...2...',
-  '...2222222..',
-  '..22.222.22.',
-  '.22222222222',
-  '.2.2222222.2',
-  '.2.1.....1.2',
-  '....11.11...',
-  '............',
-  '............',
+// Blots and a stripe: as a map of chemistry, the blots become one kind of
+// texture and the stripe another, with a third in between.
+export const BLOTS = [
+  '.........',
+  '.22...1..',
+  '.22..111.',
+  '......1..',
+  '.........',
+  '..1......',
+  '.111..22.',
+  '..1...22.',
+  '.........',
 ];
 
-// An eye: a solid pupil inside a broken ring, so the stencil pours one thick
-// jet ringed by a crown of thin ones.
-export const EYE = [
-  '............',
-  '....1111....',
-  '..111..111..',
-  '..1......1..',
-  '.11..22..11.',
-  '.1..2222..1.',
-  '.1..2222..1.',
-  '.11..22..11.',
-  '..1......1..',
-  '..111..111..',
-  '....1111....',
-  '............',
-];
-
-// One long stroke, winding in: growth that follows the drawing has a path
-// to travel, from the outer end to a fainter tip at the centre.
-export const SPIRAL = [
-  '22222222222.',
-  '..........2.',
-  '.22222222.2.',
-  '.2......2.2.',
-  '.2.2222.2.2.',
-  '.2.2..2.2.2.',
-  '.2.2.11.2.2.',
-  '.2.2....2.2.',
-  '.2.222222.2.',
-  '.2........2.',
-  '.2222222222.',
-  '............',
+// Eight points round a ring at the angles of an octagon: as wave vectors
+// they interfere into an eightfold quasicrystal, a pattern that never
+// repeats exactly and is nowhere a grid.
+export const OCTAGON = [
+  '.........',
+  '.........',
+  '...2.2...',
+  '..2...2..',
+  '.........',
+  '..2...2..',
+  '...2.2...',
+  '.........',
+  '.........',
 ];
