@@ -388,13 +388,14 @@ spectrum of waves — and fills the screen with what that structure makes of
 it, so there is never one copy of the drawing to find and never a grid.
 `glyph-crystal`, `glyph-reaction` and `glyph-cymatics` fill the screen and
 draw in the background layer; the other two are transparent and draw in
-main.
+main. `glyph-dendrite` is a native 3D scene, so it needs three.js and is
+drawn as `glyph-crystal` when 3D is off.
 
 | id | what it does |
 |----|--------------|
 | `glyph-current` | the drawing as a stream function: tiled and blurred into a smooth field, its filled cells are hills, and a current runs along their contours — circling every drawn shape, fast on the steep rims and slow in the flats between. Thousands of motes ride it, leaving fading trails, and what builds up is a grain of eddies whose whorls are the drawing's shapes, repeated and mirrored across the screen under a slow turn, so no two line up. Hits quicken and brighten the current; `flow` sets its pace, `turn` how fast the field turns beneath it. Options `count` (motes), `scale` (size of one copy of the drawing), `seed` |
 | `glyph-crystal` | the drawing as a crystal habit: its silhouette, seen from its centre, is how fast a crystal grows in each direction, so a cross grows as a four-pointed star, a ring as a disc, a diagonal stroke as a long lozenge. Seeds land across the screen and grow at that shape, each at its own turn, and where two fronts meet they stop — the screen tessellates into cells whose every edge is where two of the drawing's shapes collided. A pixel keeps whichever front reached it first, in the colour of that moment, so each crystal carries rings: a bright nucleus fading outward, hue turning as it grows, and a bright band for every hit that landed while it grew. When the screen is full a new generation seeds on top and grows over the old, which sinks into dusk. Options `size` (`small`, `med`, `large`: how many seeds a generation gets), `grain` (`rings`, `flat`), `edges` (`smooth`, `faceted`) |
-| `glyph-dendrite` | the drawing as a branching rule: each row is one generation of growth — a filled cell is a child branch, its column the angle it leaves at (left of centre turns left), its strength how long and thick it grows; a centre cell carries the trunk on at full stride, a row with no centre forks the trunk, an empty row grows straight. Tips follow the rows in turn, over and over, finer each cycle. Seeds start at the screen's edges and grow inward like frost on a window, wandering a little and stopping dead when they meet anything already grown, so the trees pack the screen into territories; when nothing is left growing it thaws — fades out while new seeds start over it. Hits make a share of the tips branch at once and land a seed. Options `spread` (`narrow`, `wide`: how far the outermost column turns a branch), `from` (`edges`, `centre`, `scatter`), `seed` |
+| `glyph-dendrite` | the drawing as a branching rule, grown in 3D: each row is one generation of growth — a filled cell is a child branch, its column the angle it leaves the stem at (left of centre to one side, right to the other), its strength how long and thick it grows; a centre cell carries the trunk on, a row with no centre forks it, an empty row grows straight. Each generation's children leave in a plane turned the golden angle round the stem from the last, so a flat drawing grows as a spiralling 3D plant; tips follow the rows in turn, over and over, finer each cycle, wandering through noise and stopping dead when they meet anything already grown, so the branches pack into a coral without crossing. Drawn as glowing filaments, wider and brighter nearer the camera and dimmed toward the back, while the camera circles it or swoops through it. The sound runs along the branches: distance from the root is frequency, so the spectrum lights the coral from the trunks (bass) out to the twigs (treble); hits fire a pulse of light out along every branch that shoves them outward as it passes, make tips branch at once, land a seed and lurch the coral round; `sway` streams the outer branches in a current. When growth stops it stands a few seconds, then burns back from its twigs and blows apart while a new one grows. 3D: falls back to `glyph-crystal`. Options `spread` (`narrow`, `wide`), `from` (`centre`: a coral radiating from a core; `ground`: a thicket growing up from a floor; `scatter`), `seed`, `palette`, `distance` |
 | `glyph-reaction` | the drawing as a map of chemistry: two substances react and diffuse across the screen (Gray–Scott reaction–diffusion), and the texture that grows — spots, worms, coral, a maze — depends on two rates. The drawing, tiled and softened, sets them: one texture grows where it is empty, another where it is black, and grey is the country between where the two fight, so the drawing shows only as the weather of the texture, several copies across the screen, turning slowly. Hits drop new seeds of growth; `flow` is how fast the chemistry runs. Options `regime` (`coral`, `maze`, `worms`, `spots`: which pair of textures), `scale` |
 | `glyph-cymatics` | the drawing as a spectrum: each filled cell is a plane wave — its offset from the centre the wave's direction and frequency, its strength the amplitude — and the screen shows their sum as a plate dusted with sand would, bright along the nodal lines where the waves cancel. Cells on a square make a square lattice of ripples, cells on a hexagon a honeycomb, a single cell plain stripes; every drawing tessellates the whole screen and none looks like the dots that made it. The waves drift in phase at their own rates so the pattern crawls, `detail` (treble) lifts the finer waves, `turn` turns the spectrum, and hits lurch every phase at once. Options `render` (`nodes`, `relief`, `terraces`), `scale` (wavelength of the drawing's unit frequency) |
 
@@ -492,7 +493,7 @@ intensity plus 0.25 relative.
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
 | `glyph-current` | `surge` ← bass | `flow` ← int rms, `turn` ← int mid, `glow` ← mix treble |
 | `glyph-crystal` | `seed` ← bass | `grow` ← int mid, `glow` ← mix treble |
-| `glyph-dendrite` | `sprout` ← bass | `grow` ← int mid, `glow` ← mix treble |
+| `glyph-dendrite` | `sprout` ← bass | `grow` ← int mid, `glow` ← mix treble, `sway` ← int rms (and the whole spectrum, root to tip) |
 | `glyph-reaction` | `bloom` ← bass | `flow` ← int mid, `glow` ← int rms |
 | `glyph-cymatics` | `pulse` ← bass | `glow` ← int rms, `turn` ← int mid, `detail` ← mix treble |
 | `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
@@ -578,7 +579,7 @@ options on, so names they share carry over.
 | `tesseract` | `palette`, `shape`, `distance`, `wDistance` 2.2 (1.3–5), `tube` 0.028 (0.005–0.08), `bead` 0.065 (0.01–0.15) |
 | `glyph-current` | `glyph`, `count` 2200 (200–6000), `scale` 1 (0.4–3), `seed`, `trail` 1.6 (0.2–6) |
 | `glyph-crystal` | `glyph`, `size`, `grain`, `edges`, `nucleus` 0.12 (0.03–0.4), `hueRate` 0.9 (0–3) |
-| `glyph-dendrite` | `glyph`, `spread`, `from`, `seed`, `width` 1.8 (0.5–5), `wander` 1 (0–3) |
+| `glyph-dendrite` | `glyph`, `spread`, `from`, `seed`, `width` 1 (0.3–3), `wander` 1 (0–3), `palette`, `distance` |
 | `glyph-reaction` | `glyph`, `regime`, `scale` 1 (0.4–3), `seeds` 10 (1–40) |
 | `glyph-cymatics` | `glyph`, `render`, `scale` 1 (0.3–3), `nodeWidth` 0.16 (0.05–0.5), `terraces` 5 (2–12) |
 | `perlin-glow` | `react`, `scale` 1 (0.25–4), `seed`, `octaves` 3 (1–5), `warp` 0.9 (0–3) |
@@ -694,7 +695,7 @@ that structure does with it, everywhere at once. The readings are:
 |---------------|------------------------|-----------------------|
 | `glyph-current` | a stream function — a smooth, tiled field whose hills are the filled cells | a texture: the grain of motes riding the field's curl |
 | `glyph-crystal` | a crystal habit — how far the filled cells reach in each direction from the centre | a tessellation, grown: fronts of that shape advancing until they meet |
-| `glyph-dendrite` | a branching rule — each row the children a branch splits into | a growth pattern: trees following the rule, packing the screen |
+| `glyph-dendrite` | a branching rule — each row the children a branch splits into | a growth pattern in 3D: a coral following the rule, packing a sphere |
 | `glyph-reaction` | a map of two reaction rates, tiled and softened | a texture: reaction–diffusion growth changing character region by region |
 | `glyph-cymatics` | a spectrum — each filled cell a plane wave, by its offset from the centre | a tessellation: the interference pattern of the waves |
 
