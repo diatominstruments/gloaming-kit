@@ -408,6 +408,9 @@ order they came on in. Pair one with a figure from above.
 | `perlin-glow` | domain-warped noise shaded from the background colour up through a dimmed line colour to accent on its brightest ridges; brightens with the passage. Option `react` picks what a hit does, none of which move the field: `'grow'` (default) spreads the bright zones outward in place, `'layers'` fades up a second, finer field in the accent colour, `'curl'` deepens the warp so shapes twist. Options `scale`, `seed` |
 | `infinity-mirror` | a rim whose inside reflects the previous frame shrunk and turned, so the rim and everything on screen recede into a twisting tunnel. The reflection opens up with `reveal`, the twist per reflection follows `turn`, and `flip` hits reverse it. Option `shape: 'rect' \| 'circle'` |
 | `kaleidoscope` | a turning wedge of the previous frame mirrored around the centre into a rosette behind the foreground; hits step the wedge count. Option `segments` |
+| `wallpaper` | the previous frame shrunk into a grid of tiles behind the foreground, every other tile mirrored so the seams meet; each tile holds the whole screen, so the lattice recurses. Tiles zoom with `breathe`, the sheet slides at a rate `slide` sets along a wandering heading, alternate tiles flush toward the accent colour with `tint`, and `shift` hits walk the column count. Options `columns`, `rows`, `mirror`, `tintPattern` |
+| `zoom-burst` | the previous frame drawn several times, each a step larger and fainter, so everything streaks outward from a roaming point — copies of copies, so a hit flings the picture into a speed-blur that drains back. `stretch` sets the streak length, `wander` how fast the point roams, `tint` flushes the copies, and `kick` hits throw the point (and with `direction: 'flip'`, reverse the burst). Options `copies`, `step`, `falloff`, `twist`, `blend` |
+| `hue-drift` | the previous frame echoed back a little larger and turned through the colour wheel, so each echo sits further round than the last: the figure trails a rainbow, and under another feedback background (a mirror's tunnel, a kaleidoscope's rings) that one's copies take the wheel too. `drift` sets how fast the hue turns, `swell` flares the echoes out, and `jump` hits step the hue a whole notch, which runs down every echo as a band. Options `mode` (`rotate`, which needs canvas filters and falls back to `colourise`), `rate`, `jump`, `zoom`, `spin` |
 | `text-ghosts` | hits stamp the text somewhere on screen; each fades into a ghost, and ghosts drift on a noise flow field, showing in slow patches. Options `text`, `count`, `seed` (share a seed with `perlin-glow` to drift in the same currents) |
 | `dot-grid` | halftone grid of dots sized by a drifting noise field (`mode: 'noise'`) or a radial spectrum (`mode: 'spectrum'`); hits ripple an accent ring outward. Option `spacing` |
 | `moire` | two fine ring (`pattern: 'rings'`) or line (`pattern: 'lines'`) patterns slightly out of register, so small audio-driven shifts sweep large interference bands |
@@ -418,6 +421,10 @@ order they came on in. Pair one with a figure from above.
 | id | what it does |
 |----|--------------|
 | `scanlines` | CRT scanlines crawling down, a vignette, and red/cyan channel split that opens on hits; snare hits send a roll bar down the screen and tear the channels wider. Option `strength` |
+| `bloom` | the frame blurred and added back over itself, so everything glows, with a wake (`trail`) that carries each frame's light on, spread further and dimmer, like ink in water. `spread` widens the blur on the bass, `tint` colours the halo with the treble, and `flare` hits flash it. Options `radius`, `boost`, `threshold`, `blend` |
+| `reflecting-pool` | a waterline with everything above it reflected below in rippling strips, laid over the lower part of the frame so the figure stands at the water's edge. The water solidifies with `reveal`, ripples travel at a pace `current` sets, the waterline rises with `tide`, the surface shimmers and the water tints with `glow`, and `splash` hits drop rings that run away from the surface. Options `waterline`, `strips`, `ripple`, `wavelength`, `squash`, `fade` |
+| `spectral-slices` | the frame cut into strips, one per band from bass to treble, each pushed sideways by its band's energy against that band's own recent range: a kick shoves the bottom strips, a hi-hat flicks the top. Loud strips flush toward the accent colour and light their edges; `jolt` hits throw every strip a random extra distance. Options `strips`, `orientation`, `motion` (`displace` springs back, `scroll` streams), `pattern`, `amplitude`, `curve` |
+| `mosaic` | the frame rebuilt from blocks that coarsen as the music swells (`swell`) and resolve as it rests, on a grid that creeps so the blocks shimmer; `pulse` hits shatter it a step further and `tint` colours it. Options `block`, `gain`, `style` (`blocks`, `tiles` with grout, `dots` as an LED wall), `boost` |
 
 ## Routing
 
@@ -499,11 +506,18 @@ intensity plus 0.25 relative.
 | `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
 | `infinity-mirror` | `flip` ← snare | `reveal` ← rel bass (fast rise, slow fall), `turn` ← mid |
 | `kaleidoscope` | `shift` ← snare | `reveal` ← int rms, `spin` ← mid |
+| `wallpaper` | `shift` ← snare | `reveal` ← int rms, `breathe` ← rel bass, `slide` ← mid, `tint` ← rel treble |
+| `zoom-burst` | `kick` ← bass | `reveal` ← int rms, `stretch` ← rel bass, `wander` ← mid, `tint` ← rel treble |
+| `hue-drift` | `jump` ← snare | `reveal` ← int rms, `drift` ← mid, `swell` ← rel bass |
 | `text-ghosts` | `stamp` ← bass | `haze` ← int rms, `drift` ← mid |
 | `dot-grid` | `ripple` ← bass | `swell` ← int rms, `flow` ← mid |
 | `moire` | `kick` ← bass | `shift` ← int bass, `turn` ← mid |
 | `light-leaks` | `bloom` ← bass | `warmth` ← int rms, `drift` ← mid |
 | `scanlines` | `roll` ← snare | `split` ← rel bass |
+| `bloom` | `flare` ← bass | `reveal` ← int rms, `spread` ← rel bass, `tint` ← rel treble |
+| `reflecting-pool` | `splash` ← bass | `reveal` ← int rms, `current` ← mid, `tide` ← rel bass, `glow` ← rel treble |
+| `spectral-slices` | `jolt` ← snare | `reveal` ← int rms, `tint` ← rel treble (and the whole spectrum, strip by strip) |
+| `mosaic` | `pulse` ← snare | `swell` ← rel bass, `glow` ← int rms, `tint` ← rel treble |
 
 `eq-bars` has no slots because it draws the raw `spectrum`, and `waveform`
 routes only its amplitude — the trace data itself is an array, with nothing
@@ -585,11 +599,18 @@ options on, so names they share carry over.
 | `perlin-glow` | `react`, `scale` 1 (0.25–4), `seed`, `octaves` 3 (1–5), `warp` 0.9 (0–3) |
 | `infinity-mirror` | `shape`, `shrink` 0.9 (0.7–0.98), `margin` 0.06 (0–0.3) |
 | `kaleidoscope` | `segments`, `zoom` 0.94 (0.8–1.05) |
+| `wallpaper` | `columns` 3 (1–8), `rows` 0 (0–8; 0 keeps tiles square), `mirror`, `gap` 0 (0–0.3), `walk` 2 (0–6), `floor` 0.3, `depth` 0.6, `breathe` 0.12 (0–0.5), `slide` 0.3 (0–2), `tint` 0.7, `tintColor`, `tintPattern` |
+| `zoom-burst` | `copies` 3 (1–8), `step` 0.04 (0.005–0.15), `gain` 0.12 (0–0.4), `falloff` 0.65 (0.2–1), `twist` 0 (−0.2–0.2), `direction`, `wander` 0.2 (0–0.5), `blend`, `floor` 0.55, `depth` 0.35, `tint` 0.6, `tintColor`, `kick` 0.5 |
+| `hue-drift` | `mode`, `rate` 180 (0–720), `gain` 360 (0–1440), `jump` 60 (0–180), `zoom` 1.012 (0.95–1.08), `swell` 0.03 (0–0.15), `spin` 0 (−0.5–0.5), `saturate` 1 (0.5–1.5), `strength` 0.6, `direction`, `floor` 0.4, `depth` 0.45 |
 | `text-ghosts` | `text`, `count` 24 (0–80), `seed`, `size` 0.09 (0.03–0.3), `field` 2.2 (0.5–6) |
 | `dot-grid` | `mode`, `spacing` 26 (10–80), `field` 3 (0.5–10), `maxSize` 0.42 (0.1–0.5), `seed` |
 | `moire` | `pattern`, `spacing` 9 (4–30), `alpha` 0.28 (0.05–1) |
 | `light-leaks` | `discs` 14 (0–60), `leaks` 2 (0–6), `seed` |
 | `scanlines` | `strength` 0.5 (0–1), `pitch` 3 (2–10), `vignette` 0.7 (0–1) |
+| `bloom` | `radius` 12 (2–96), `gain` 36 (0–160), `boost` 2 (1–8), `threshold` 0 (0–3), `trail` 0.5 (0–0.95), `blend`, `zoom` 1 (0.95–1.1), `floor` 0.4, `depth` 0.6, `tint` 0.6, `tintColor`, `flare` 0.5 |
+| `reflecting-pool` | `waterline` 0.6 (0.2–0.9), `strips` 64 (8–240), `ripple` 1 (0–3), `wavelength` 0.1 (0.02–0.5), `squash` 0.9 (0.4–1), `fade` 0.6, `tide` 0.08 (0–0.3), `splash` 1 (0–3), `shimmer` 0.6, `floor` 0.45, `depth` 0.55, `tint` 0.5, `tintColor` |
+| `spectral-slices` | `strips` 24 (4–96), `orientation`, `bass`, `motion`, `pattern`, `amplitude` 0.2 (0–1), `speed` 0.6 (0–3), `curve` 1.5 (0.5–4), `attack` 0.03, `release` 0.18, `gap` 0 (0–0.4), `edges` 0.4, `floor` 0.25, `depth` 0.75, `tint` 0.7, `tintColor`, `jolt` 0.15 (0–0.5) |
+| `mosaic` | `block` 8 (2–64), `gain` 28 (0–128), `style`, `gutter` 0.2 (0–0.6), `boost` 3 (1–8), `drift` 0.3 (0–3), `pulse` 16 (0–64), `floor` 0.7, `depth` 0.3, `tint` 0.5, `tintColor` |
 
 ### Bouncing text
 
@@ -968,9 +989,24 @@ visualizations that don't declare slots, but it can't be rerouted.
 `afterFrame(ctx)` is called once every layer has drawn, with the finished
 frame on the canvas — for effects that feed a frame into the next one.
 `FeedbackVisualization` ([src/visualizations/feedback-base.js](src/visualizations/feedback-base.js))
-captures it for you as `this.previous`; `infinity-mirror` and `kaleidoscope`
-build on it. An overlay can read the current frame straight off
-`ctx.canvas` in `draw`, since everything beneath it has already drawn.
+captures it for you as `this.previous`; `infinity-mirror`, `kaleidoscope`,
+`wallpaper`, `zoom-burst` and `hue-drift` build on it. An overlay can read the
+current frame straight off `ctx.canvas` in `draw`, since everything beneath
+it has already drawn; `TreatmentVisualization`
+([src/visualizations/treatment-base.js](src/visualizations/treatment-base.js))
+copies it for you as `this.current`, and `bloom`, `reflecting-pool`,
+`spectral-slices` and `mosaic` build on that. Both bases share
+[src/visualizations/frame-utils.js](src/visualizations/frame-utils.js):
+offscreen canvases, tinting through a blend mode, a halving-chain blur, and
+background subtraction.
+
+Two things a frame-redrawing effect has to keep in mind. A feedback
+background's echo must always be drawn at less than full alpha — at 1 the
+last frame never fades, and copies of copies cover the screen within a
+second (zoom-burst solves its first copy's alpha from a total coverage,
+which is what has to stay under 1). And anything that lifts or adds light
+should subtract the style's `background` first, or the background brightens
+along with the figure.
 
 For smooth organic fields, [src/noise.js](src/noise.js) has seeded 3D Perlin
 noise (`createNoise3D(seed)`, about ±1) and `fbm()` for layered octaves;

@@ -38,6 +38,13 @@ import { DotGrid } from './dot-grid.js';
 import { Moire } from './moire.js';
 import { LightLeaks } from './light-leaks.js';
 import { Scanlines } from './scanlines.js';
+import { Wallpaper } from './wallpaper.js';
+import { ZoomBurst } from './zoom-burst.js';
+import { HueDrift } from './hue-drift.js';
+import { Bloom } from './bloom.js';
+import { ReflectingPool } from './reflecting-pool.js';
+import { SpectralSlices } from './spectral-slices.js';
+import { Mosaic } from './mosaic.js';
 import { CATEGORY, CATEGORIES } from './categories.js';
 import { LAYER, LAYERS } from './layers.js';
 
@@ -53,8 +60,9 @@ export const registry = new Map(
     Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D, DeJong3D, Clifford3D, Bedhead3D,
     FractalCathedral, SpectrumTerrain, Nebula, HelixCorridor, Tesseract,
     GlyphCurrent, GlyphCrystal, GlyphDendrite, GlyphReaction, GlyphCymatics,
-    PerlinGlow, InfinityMirror, Kaleidoscope, TextGhosts, DotGrid, Moire, LightLeaks,
-    Scanlines,
+    PerlinGlow, InfinityMirror, Kaleidoscope, Wallpaper, ZoomBurst, HueDrift, Bloom,
+    TextGhosts, DotGrid, Moire, LightLeaks,
+    Scanlines, ReflectingPool, SpectralSlices, Mosaic,
   ].map((V) => [V.id, V]),
 );
 
@@ -108,11 +116,18 @@ export const VIZ = Object.freeze({
   PERLIN_GLOW: PerlinGlow.id,
   INFINITY_MIRROR: InfinityMirror.id,
   KALEIDOSCOPE: Kaleidoscope.id,
+  WALLPAPER: Wallpaper.id,
+  ZOOM_BURST: ZoomBurst.id,
+  HUE_DRIFT: HueDrift.id,
+  BLOOM: Bloom.id,
   TEXT_GHOSTS: TextGhosts.id,
   DOT_GRID: DotGrid.id,
   MOIRE: Moire.id,
   LIGHT_LEAKS: LightLeaks.id,
   SCANLINES: Scanlines.id,
+  REFLECTING_POOL: ReflectingPool.id,
+  SPECTRAL_SLICES: SpectralSlices.id,
+  MOSAIC: Mosaic.id,
 });
 
 /** Register a custom visualization class (must have a static `id`). */
