@@ -6,6 +6,7 @@
     ".": "./src/engine.js"
   },
   "scripts": {
+    "test": "node --experimental-default-type=module --test tests/*.test.mjs",
     "build": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=dist/gloaming-kit.js --sourcemap",
     "watch": "npm run build -- --watch",
     "build:demo": "esbuild src/engine.js --bundle --format=iife --global-name=gloamingKit --outfile=docs/gloaming-kit.js --minify"

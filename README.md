@@ -160,6 +160,75 @@ viz.resize();                             // call on window resize
 viz.on('trigger:bass', ({ strength, intensity }) => { /* app-level reactions */ });
 ```
 
+## Image and video backgrounds
+
+Load an image or a muted video below **every** visualization, including the
+`background` layer. The draw order is the base colour, media, background
+effects, main visualizations, then overlays. Media is drawn into the same
+canvas, so canvas recording includes it automatically.
+
+```js
+await viz.setBackground({
+  source: imageFile,        // File/Blob or URL string
+  type: 'image',            // 'image' or 'video'; inferred from MIME/extension if omitted
+  fit: 'cover',             // 'cover' (crop), 'contain' (letterbox), or 'stretch'
+  opacity: 1,              // 0–1
+  dim: 0.2,                // 0–1; darkens the media and base colour beneath the effects
+  positionX: 0.5,           // 0–1; left to right crop/letterbox alignment
+  positionY: 0.5,           // 0–1; top to bottom alignment
+});
+
+await viz.setBackground({
+  source: videoFile,
+  type: 'video',
+  loop: true,              // false holds the last frame after the clip finishes
+  playbackRate: 1,         // 0.25–4; relative to the song clock
+  offset: 0,               // seconds into the clip at song time zero
+});
+
+viz.updateBackground({ opacity: 0.7, dim: 0.3 }); // live, no reload
+viz.backgroundInfo;        // type, dimensions, and current settings, or null
+viz.clearBackground();     // also: await viz.setBackground(null)
+```
+
+Videos stay muted and follow the player's play, pause, and seek events,
+including when a host drives `viz.player` directly. Their position is
+`songTime × playbackRate + offset`, modulo the clip duration when looping.
+At a natural song end the last song position holds until replay or seek.
+Video must be a finite, seekable clip in a format the browser can decode;
+URL servers must support video seeking. Muted playback may still require a
+user gesture in some hosts; listen for `background:error` for playback errors.
+
+`setBackground()` resolves after media is decoded. A failed replacement
+rejects and leaves the previous background intact. Starting another load,
+clearing, or disposing cancels pending loads with `AbortError`. Owned videos
+are paused and blob URLs released when replaced or disposed. The engine
+emits `background:load` (the same metadata as `backgroundInfo`) and
+`background:error` (`{ error }`). Persist source references in your app's own
+project format; the engine owns loaded media, not project files.
+
+URL assets request anonymous CORS access and are checked before drawing, so
+a source that would taint the canvas is rejected instead of breaking capture.
+Remote servers must permit cross-origin access. For local files use a
+`File`/`Blob` from a picker rather than a `file://` URL.
+
+Opaque background effects can cover the media. Use per-entry `opacity` to
+mix them with it without changing the effect's own settings:
+
+```js
+viz.setTimeline([{ from: 0, visualizations: [
+  { id: VIZ.PERLIN_GLOW, opacity: 0.35 },
+  VIZ.RADIAL_BURST,
+] }]);
+```
+
+Opacity defaults to 1, multiplies the engine's transition fade, and may be
+changed through `setTimeline()` without restarting that instance. Custom
+visualizations should preserve/multiply `ctx.globalAlpha`, as they already
+must for fades. Feedback backgrounds and screen treatments also process the
+media because they work on the composed frame. Existing clients that do not
+set a media background retain their previous rendering behavior.
+
 ## Dynamics
 
 A fixed threshold on band energy fails both ways: a quiet track never reaches
