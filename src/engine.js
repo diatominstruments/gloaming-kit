@@ -2,11 +2,12 @@ import { Emitter } from './emitter.js';
 import { SongPlayer } from './player.js';
 import { Analyzer, DEFAULT_TRIGGERS } from './analyzer.js';
 import { Timeline } from './timeline.js';
-import { registry, fallbackOf } from './visualizations/index.js';
+import { registry, fallbackOf } from './visualizations';
 import { layerRank } from './visualizations/layers.js';
 import { resolveEvent, referencedTriggers } from './signals.js';
 import { easeStyle } from './style.js';
 import { ThreeStage } from './three-stage.js';
+import { MediaBackground } from './background-media.js';
 
 const FADE_SECONDS = 0.6;
 const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
@@ -81,12 +82,22 @@ export class GloamingKit extends Emitter {
     this.active = new Map();
     this.rafId = null;
     this.lastTick = 0;
+    this.backgroundMedia = null;
+    this.pendingBackground = null;
+    this.backgroundRequest = 0;
+    this.backgroundEndedTime = null;
 
     for (const ev of ['load', 'play', 'pause', 'ended', 'seek']) {
       this.player.on(ev, (d) => this.emit(ev, d));
     }
     // Jumping across the song shouldn't glide through the styles it skipped.
     this.player.on('seek', () => { this.styleDirty = true; });
+    for (const ev of ['load', 'play', 'pause', 'seek', 'ended']) {
+      this.player.on(ev, () => {
+        this.backgroundEndedTime = ev === 'ended' ? this.player.duration : null;
+        this.backgroundMedia?.sync(this.backgroundEndedTime ?? this.player.currentTime, this.player.playing, true);
+      });
+    }
     this.analyzer.on('frame', (d) => this.emit('frame', d));
 
     this.resize();
@@ -107,6 +118,46 @@ export class GloamingKit extends Emitter {
 
   seek(time) {
     this.player.seek(time);
+  }
+
+  /** Load a URL/File/Blob beneath every visualization. Failed loads keep the old background. */
+  async setBackground(config) {
+    if (config == null) { this.clearBackground(); return null; }
+    const candidate = new MediaBackground(config, (error) => this.emit('background:error', { error }));
+    const request = ++this.backgroundRequest;
+    this.pendingBackground?.dispose();
+    this.pendingBackground = candidate;
+    try {
+      await candidate.load();
+      if (request !== this.backgroundRequest) throw new DOMException('Background load was canceled.', 'AbortError');
+      this.backgroundMedia?.dispose();
+      this.backgroundMedia = candidate;
+      this.pendingBackground = null;
+      candidate.sync(this.backgroundEndedTime ?? this.player.currentTime, this.player.playing, true);
+      this.emit('background:load', candidate.info);
+      return candidate.info;
+    } catch (error) {
+      candidate.dispose();
+      if (this.pendingBackground === candidate) this.pendingBackground = null;
+      if (error.name !== 'AbortError') this.emit('background:error', { error });
+      throw error;
+    }
+  }
+
+  /** Update fit/opacity/dimming/position/video timing without reloading the media. */
+  updateBackground(patch) {
+    this.backgroundMedia?.update(patch);
+    this.backgroundMedia?.sync(this.backgroundEndedTime ?? this.player.currentTime, this.player.playing,
+      ['loop', 'playbackRate', 'offset'].some((key) => key in patch));
+  }
+
+  get backgroundInfo() { return this.backgroundMedia?.info ?? null; }
+
+  clearBackground() {
+    this.backgroundRequest++;
+    this.pendingBackground?.dispose();
+    this.backgroundMedia?.dispose();
+    this.pendingBackground = this.backgroundMedia = null;
   }
 
   setStyle(patch) {
@@ -262,6 +313,7 @@ export class GloamingKit extends Emitter {
   /** Stop drawing and let go of the audio graph. The AudioContext is left open. */
   dispose() {
     this.stopLoop();
+    this.clearBackground();
     this.player.teardown();
     this.player.output.disconnect();
     this.analyzer.node.disconnect();
@@ -295,6 +347,8 @@ export class GloamingKit extends Emitter {
     ctx.fillStyle = this.style.background;
     ctx.shadowBlur = 0;
     ctx.fillRect(0, 0, w, h);
+    this.backgroundMedia?.sync(this.backgroundEndedTime ?? frame.time, this.player.playing);
+    this.backgroundMedia?.draw(ctx, w, h);
 
     // Back to front by layer. The sort is stable, so within a layer the
     // Map's insertion order (spawn order) still decides.
@@ -311,7 +365,7 @@ export class GloamingKit extends Emitter {
       entry.viz.onFrame(frame);
       entry.viz.updateInputs(frame, dt, events);
       ctx.save();
-      ctx.globalAlpha = entry.alpha;
+      ctx.globalAlpha = entry.alpha * (entry.spec.opacity ?? 1);
       entry.viz.draw(ctx, dt);
       ctx.restore();
     }
@@ -327,6 +381,7 @@ export class GloamingKit extends Emitter {
       const entry = this.active.get(key);
       if (entry) {
         entry.leaving = false;
+        entry.spec = spec;
       } else {
         this.spawn(key, spec);
       }

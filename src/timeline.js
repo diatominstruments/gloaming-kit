@@ -40,8 +40,9 @@ const keyOf = (entry) => {
 
 const normalize = (entry) => {
   const e = typeof entry === 'string'
-    ? { id: entry, bind: null, options: null }
-    : { id: entry.id, bind: entry.bind ?? null, options: entry.options ?? null };
+    ? { id: entry, bind: null, options: null, opacity: 1 }
+    : { id: entry.id, bind: entry.bind ?? null, options: entry.options ?? null,
+        opacity: Number.isFinite(entry.opacity) ? Math.max(0, Math.min(1, entry.opacity)) : 1 };
   return { ...e, key: keyOf(e) };
 };
 
