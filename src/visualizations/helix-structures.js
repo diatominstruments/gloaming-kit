@@ -433,7 +433,9 @@ export class Braid {
     this.spin1 = 0;
     this.spin2 = 0;
     this.budsPerSub = Math.max(4, Math.round(viz.density / 3));
-    this.blooms = new Blooms(viz, { capacity: S * 3 * this.budsPerSub, shape: viz.shape });
+    this.blooms = viz.flowers
+      ? new Blooms(viz, { capacity: S * 3 * this.budsPerSub, shape: viz.shape })
+      : null;
   }
 
   update(dt, { spinIn, glow }) {
@@ -445,7 +447,7 @@ export class Braid {
     this.spin2 = (this.spin2 - t * (0.4 + spinIn * 1.2)) % TAU;
     this.uniforms.uPhase1.value = ((W1 * viz.travel) % TAU) + this.spin1;
     this.uniforms.uPhase2.value = ((W2 * viz.travel) % TAU) + this.spin2;
-    this.placeBuds(glow);
+    if (this.blooms) this.placeBuds(glow);
   }
 
   placeBuds(glow) {
@@ -493,7 +495,7 @@ export class Braid {
           blooms.add(
             p, axis, [-s, c, 0],
             seed + time * (hash(seedIndex + 7) - 0.5) * 0.6,
-            viz.size * 0.9 * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
+            viz.bloomSize * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
             Math.min(1, Math.max(0, (held - BUDS[0]) / (BUDS[1] - BUDS[0]))),
             field.heatAt(ahead),
             levelColors[0], levelColors[1],
@@ -739,7 +741,9 @@ export class Weave {
     viz.scene.add(this.knots);
     this.c = new THREE.Color();
 
-    this.blooms = new Blooms(viz, { capacity: Math.ceil((S * this.rows) / 2), shape: viz.shape });
+    this.blooms = viz.flowers
+      ? new Blooms(viz, { capacity: Math.ceil((S * this.rows) / 2), shape: viz.shape })
+      : null;
   }
 
   update(dt, { glow }) {
@@ -753,7 +757,7 @@ export class Weave {
     const thick = viz.uniforms.uThick.value;
     const M = this.knots.instanceMatrix.array;
     const C = this.knots.instanceColor.array;
-    blooms.begin();
+    blooms?.begin();
     let n = 0;
     for (let r = 0; r < rows; r++) {
       const ahead = mod(r * rowStep - travel, L);
@@ -780,7 +784,7 @@ export class Weave {
         C[n * 3 + 2] = c.b;
 
         // Buds on every other knot of the strands proper.
-        if (i % 2 || (i / 2 + r) % 2) continue;
+        if (!blooms || i % 2 || (i / 2 + r) % 2) continue;
         const held = field.sustainAt(ahead);
         if (held < BUDS[0]) continue;
         const seedIndex = Math.round((travel + ahead) / rowStep) * 17 + i;
@@ -790,7 +794,7 @@ export class Weave {
           [ct * R + axis[0] * s, st * R + axis[1] * s, -ahead + axis[2] * s],
           axis, [-st, ct, 0],
           seed + time * (hash(seedIndex + 7) - 0.5) * 0.6,
-          viz.size * 0.9 * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
+          viz.bloomSize * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
           Math.min(1, Math.max(0, (held - BUDS[0]) / (BUDS[1] - BUDS[0]))),
           field.heatAt(ahead),
           levelColors[0], levelColors[1],
@@ -800,7 +804,7 @@ export class Weave {
     this.knots.instanceMatrix.needsUpdate = true;
     this.knots.instanceColor.needsUpdate = true;
     this.knotGlow.value = 0.15 + glow * 0.45;
-    blooms.end(glow);
+    blooms?.end(glow);
   }
 }
 
@@ -812,7 +816,9 @@ export class Weave {
  * Unfolding rolls it face-on to you and widens it, showing the second
  * colour on the side that faces the axis; further open, two more ribbons
  * fan out from behind it either side, and fully open their edges ruffle
- * into a frill tinted toward the finest colour.
+ * into a frill tinted toward the finest colour. Fine ripples run along
+ * every ribbon all the while — as deep as the `ruffle` option, deeper the
+ * more it is open, and faster with the glow input.
  */
 export class Ribbons {
   static SEGMENTS = 900;
@@ -824,6 +830,7 @@ export class Ribbons {
     this.uniforms = {
       uWave: { value: 0 },
       uFrill: { value: 0 },
+      uRuffle: { value: viz.ruffle },
       uWidth: { value: 0.32 * viz.sizeScale },
     };
     const material = shapedMaterial(viz, {
@@ -836,6 +843,7 @@ export class Ribbons {
         attribute vec2 aRibbon;   // strand; place in its fan, -1 0 or 1
         uniform float uWave;
         uniform float uFrill;
+        uniform float uRuffle;   // how deep the ripples run, from the option
         uniform float uWidth;
         varying vec3 vBack;
         varying vec3 vFine;
@@ -870,7 +878,10 @@ export class Ribbons {
           // it rolls face-on. A ripple runs along it either way.
           vec3 across = ribbonAcross(ahead, u, n, t);
           float w = uWidth * mix(0.06, 1.0, open) * (k == 0.0 ? 1.0 : 0.75 * fan) + 1e-4;
-          float ruffle = frill * 0.3 * w * v * v * sin(6.0 * ahead + uFrill + 2.0 * k);
+          // Ripples run along the ribbon, deepening as it opens, and fully
+          // open its edges frill further.
+          float depth = uRuffle * (0.25 + 0.5 * open) + 0.6 * frill;
+          float ruffle = depth * 0.3 * w * v * v * sin(6.0 * ahead + uFrill + 2.0 * k);
           return vec3(n.xy * r, -ahead) + across * (v * w) + cross(t, across) * ruffle;
         }
       `,
@@ -924,11 +935,12 @@ export class Ribbons {
     this.frill = 0;
   }
 
-  update(dt, { spinIn }) {
+  update(dt, { spinIn, glow }) {
     const { viz } = this;
     const t = dt * viz.tempo;
     this.wave = (this.wave + t * (0.8 + spinIn)) % TAU;
-    this.frill = (this.frill + t * 2.5) % TAU;
+    // The ripples run faster on the treble and hihats.
+    this.frill = (this.frill + t * (1.5 + 4 * glow)) % TAU;
     // The ripple is fixed to the corridor as well as running along it.
     this.uniforms.uWave.value = ((0.5 * viz.travel) % TAU) + this.wave;
     this.uniforms.uFrill.value = ((6 * viz.travel) % TAU) + this.frill;

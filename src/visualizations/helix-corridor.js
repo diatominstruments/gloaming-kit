@@ -108,6 +108,7 @@ export class HelixCorridor extends ThreeVisualization {
   static options = {
     palette: PALETTE_OPTION,
     mode: { kind: 'enum', values: Object.keys(STRUCTURES), default: 'braid' },
+    flowers: { kind: 'enum', values: ['on', 'off'], default: 'on' },
     shape: { kind: 'enum', values: BLOOM_SHAPES, default: 'lotus' },
     strands: { kind: 'number', default: 4, min: 1, max: 8, step: 1 },
     density: { kind: 'number', default: 150, min: 30, max: 400, step: 10 },
@@ -115,6 +116,7 @@ export class HelixCorridor extends ThreeVisualization {
     twist: { kind: 'number', default: 0.32, min: 0, max: 1.5, step: 0.02 },
     size: { kind: 'number', default: 0.24, min: 0.05, max: 0.8, step: 0.01 },
     speed: { kind: 'number', default: 3, min: 0.25, max: 8, step: 0.25 },
+    ruffle: { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
   };
 
   static LENGTH = 90;         // world units of corridor ahead before it wraps
@@ -122,6 +124,8 @@ export class HelixCorridor extends ThreeVisualization {
   static SURGE = [0.45, 1.6]; // flight pace, × speed: [idle, added at full surge]
   static WIND = 0.6;          // extra twist at full wind, radians per unit
   static OPEN = 0.6;          // how far a full `open` holds the corridor unfolded
+  static BLOOM_SIZE = 0.22;   // a flower's scale at the default size
+  static BLOOM_GROWTH = 0.3;  // how much of size's scaling flowers follow (as a power)
 
   constructor(opts) {
     super(opts);
@@ -129,6 +133,7 @@ export class HelixCorridor extends ThreeVisualization {
     this.psychedelic = isPsychedelic(this);
 
     this.mode = this.option('mode');
+    this.flowers = this.option('flowers') === 'on';
     this.shape = this.option('shape');
     this.strands = this.option('strands');
     this.density = this.option('density');
@@ -136,7 +141,11 @@ export class HelixCorridor extends ThreeVisualization {
     this.twist = this.option('twist');
     this.size = this.option('size');
     this.speed = this.option('speed');
+    this.ruffle = this.option('ruffle');
     this.sizeScale = this.size / HelixCorridor.options.size.default;
+    // Flowers follow size only a little: sized with the structure they
+    // would fill the screen long before the threads look thick.
+    this.bloomSize = HelixCorridor.BLOOM_SIZE * Math.pow(this.sizeScale, HelixCorridor.BLOOM_GROWTH);
     // How brisk every motion is beside the flight itself — the helix's spin,
     // a braid's turning, a ribbon's ripple — so a slow speed is slow all
     // round, not a slow flight through a spinning corridor.
