@@ -5,7 +5,7 @@ import { TRIGGER } from '../analyzer.js';
 import { PALETTE_OPTION, paletteColor, isPsychedelic } from './three-shared.js';
 import { BLOOM_SHAPES } from './helix-blooms.js';
 import {
-  UnfoldField, FIELD_BUCKETS, Braid, Phyllotaxis, Weave, Ribbons,
+  UnfoldField, FIELD_BUCKETS, WIND_REACH, SWELL, FRONT_WIDTH, Braid, Phyllotaxis, Weave, Ribbons,
 } from './helix-structures.js';
 
 const TAU = Math.PI * 2;
@@ -57,12 +57,23 @@ const STRUCTURES = {
  * whole spiral, by `spin`, and you fly through it rather than it orbiting
  * you.
  *
- * Reactions:
+ * Reactions — every one of them moves the structure itself, and each
+ * defaults to something that changes beat by beat, so the corridor moves
+ * with the music rather than sitting at one level through a loud song:
  *
- *   ripple   a hit sends a front down the corridor, unfolding what it passes
- *   open     how far the corridor stands unfolded between hits
- *   spin     how fast the helix turns, and its parts within it
- *   glow     how brightly unfolded parts shine
+ *   ripple   a hit sends a front down the corridor, carrying a ring of
+ *            light, and the stretch it passes unfolds and winds back up
+ *            before the next beat (bass)
+ *   open     how far the corridor stands unfolded between hits (overall
+ *            level against the recent dynamics)
+ *   wind     how tightly the music winds the spiral: extra twist built up
+ *            over the near stretch, so the helix wrings (mids)
+ *   surge    the flight's pace: it eases with the passage and lunges
+ *            forward on hits (level, plus a kick envelope)
+ *   spin     how fast the helix turns, surging round on the backbeat
+ *            (mid level, plus snare and clap envelopes)
+ *   glow     how brightly unfolded parts shine, and the lamps (treble, plus
+ *            a hihat envelope)
  *
  * Distant parts fade to transparent rather than into a fog colour, so a
  * background layer shows through the far end of the corridor.
@@ -76,11 +87,21 @@ export class HelixCorridor extends ThreeVisualization {
 
   static inputs = {
     ripple: { kind: 'event', default: TRIGGER.BASS },
-    open:   { kind: 'level', default: { intensity: 'rms', smooth: 1.2 } },
-    spin:   { kind: 'level', default: { intensity: 'mid', smooth: 0.6 } },
+    open:   { kind: 'level', default: { relative: 'rms', smooth: 1 } },
+    wind:   { kind: 'level', default: { relative: 'mid', smooth: 0.15 } },
+    surge:  { kind: 'level', default: {
+      sum: [{ relative: 'rms', smooth: 0.5, gain: 0.6 }, { trigger: 'bass', decay: 2.5, gain: 0.6 }],
+    } },
+    spin:   { kind: 'level', default: {
+      sum: [
+        { intensity: 'mid', gain: 0.3 },
+        { trigger: 'snare', decay: 1.5 },
+        { trigger: 'clap', decay: 1.5, gain: 0.6 },
+      ],
+    } },
     glow:   { kind: 'level', default: {
-      sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],
-      smooth: 0.1,
+      sum: [{ relative: 'treble', gain: 0.8 }, { trigger: 'hihat', decay: 5, gain: 0.8 }],
+      smooth: 0.08,
     } },
   };
 
@@ -93,11 +114,14 @@ export class HelixCorridor extends ThreeVisualization {
     radius: { kind: 'number', default: 2.4, min: 0.8, max: 6, step: 0.1 },
     twist: { kind: 'number', default: 0.32, min: 0, max: 1.5, step: 0.02 },
     size: { kind: 'number', default: 0.24, min: 0.05, max: 0.8, step: 0.01 },
-    speed: { kind: 'number', default: 9, min: 1, max: 30, step: 0.5 },
+    speed: { kind: 'number', default: 3, min: 0.25, max: 8, step: 0.25 },
   };
 
-  static LENGTH = 90;        // world units of corridor ahead before it wraps
-  static SPIN = [0.15, 0.9]; // helix turn rate: [idle, added at full spin]
+  static LENGTH = 90;         // world units of corridor ahead before it wraps
+  static SPIN = [0.05, 1.2];  // helix turn rate, rad/s: [idle, added at full spin]
+  static SURGE = [0.45, 1.6]; // flight pace, × speed: [idle, added at full surge]
+  static WIND = 0.6;          // extra twist at full wind, radians per unit
+  static OPEN = 0.6;          // how far a full `open` holds the corridor unfolded
 
   constructor(opts) {
     super(opts);
@@ -113,12 +137,18 @@ export class HelixCorridor extends ThreeVisualization {
     this.size = this.option('size');
     this.speed = this.option('speed');
     this.sizeScale = this.size / HelixCorridor.options.size.default;
+    // How brisk every motion is beside the flight itself — the helix's spin,
+    // a braid's turning, a ribbon's ripple — so a slow speed is slow all
+    // round, not a slow flight through a spinning corridor.
+    this.tempo = Math.sqrt(this.speed / HelixCorridor.options.speed.default);
     this.length = HelixCorridor.LENGTH;
 
     this.travel = 0;
     this.phase = 0;    // the helix's turn: twist × travel, plus spin
     this.spin = 0;
     this.spinRate = HelixCorridor.SPIN[0];
+    this.pace = 1;     // × speed, eased toward the surge
+    this.wind = 0;     // extra twist, eased toward the wind input
     this.time = 0;
     this.hue = Math.random();
     this.white = new THREE.Color(1, 1, 1);
@@ -134,7 +164,10 @@ export class HelixCorridor extends ThreeVisualization {
       uLength: { value: this.length },
       uRadius: { value: this.radius },
       uTwist: { value: this.twist },
+      uWind: { value: 0 },
       uPhase: { value: 0 },
+      uFrontAt: { value: new THREE.Vector4() },
+      uFrontPower: { value: new THREE.Vector4() },
       uStrands: { value: this.strands },
       uThick: { value: 0.02 },
       uGlow: { value: 0.2 },
@@ -164,6 +197,41 @@ export class HelixCorridor extends ThreeVisualization {
     if (slot === 'ripple') this.field.hit(impact(data));
   }
 
+  // The helix's shape, for structures placing things on the CPU: the GLSL
+  // twins are in helix-structures.js.
+
+  /** The extra twist the music has wound in, `ahead` units in front. */
+  windAt(ahead) {
+    return this.wind * WIND_REACH * Math.tanh(ahead / WIND_REACH);
+  }
+
+  /** How far round the helix has turned there. */
+  turnAt(ahead) {
+    return this.twist * ahead + this.windAt(ahead) + this.phase;
+  }
+
+  /** Its rate of turn there, radians per unit along. */
+  twistAt(ahead) {
+    const t = Math.tanh(ahead / WIND_REACH);
+    return this.twist + this.wind * (1 - t * t);
+  }
+
+  /** The corridor's radius where it is unfolded `u`. */
+  radiusAt(u) {
+    return this.radius * (1 + SWELL * u);
+  }
+
+  /** The fronts' rings of light there. */
+  frontLight(ahead) {
+    let light = 0;
+    const { fronts } = this.field;
+    for (let i = Math.max(0, fronts.length - 4); i < fronts.length; i++) {
+      const d = (ahead - fronts[i].dist) / FRONT_WIDTH;
+      light += fronts[i].strength * Math.exp(-d * d);
+    }
+    return light;
+  }
+
   /** The three level colours, from the style or, psychedelic, the rainbow. */
   updateColors() {
     const [wound, unfolded, finest] = this.levelColors;
@@ -182,25 +250,43 @@ export class HelixCorridor extends ThreeVisualization {
   }
 
   draw(ctx, dt) {
-    const { SPIN } = HelixCorridor;
+    const {
+      SPIN, SURGE, WIND, OPEN,
+    } = HelixCorridor;
     const spinIn = this.in('spin');
     const openIn = clamp01(this.in('open'));
     const glow = this.in('glow');
     this.time += dt;
-    const step = this.speed * dt;
+    // Every response eases rather than steps, so a hit moves the corridor
+    // without jolting it.
+    this.pace = approach(this.pace, SURGE[0] + SURGE[1] * this.in('surge'), 0.2, dt);
+    this.wind = approach(this.wind, WIND * clamp01(this.in('wind')), 0.3, dt);
+    const step = this.speed * this.pace * dt;
     this.travel += step;
-    this.spinRate = approach(this.spinRate, SPIN[0] + spinIn * SPIN[1], 0.6, dt);
+    this.spinRate = approach(this.spinRate, (SPIN[0] + spinIn * SPIN[1]) * this.tempo, 0.25, dt);
     this.spin = (this.spin + this.spinRate * dt) % (2 * TAU);   // the bank below has period 4π
     this.phase = (this.phase + step * this.twist + this.spinRate * dt) % TAU;
     this.hue += dt * 0.03;
 
-    this.field.update(dt, this.travel, 0.03 + 0.3 * openIn);
+    this.field.update(dt, this.travel, 0.02 + OPEN * openIn);
     const U = this.uniforms;
     U.uField.value.set(this.field.value);
     U.uHeat.value.set(this.field.heat);
     U.uFieldShift.value = this.travel % this.length;
     U.uPhase.value = this.phase;
-    U.uGlow.value = 0.12 + glow * 0.45;
+    U.uWind.value = this.wind;
+    U.uGlow.value = 0.12 + glow;
+    // The newest four fronts, for their rings of light.
+    const { fronts } = this.field;
+    const at = [0, 0, 0, 0];
+    const power = [0, 0, 0, 0];
+    for (let i = 0; i < Math.min(4, fronts.length); i++) {
+      const front = fronts[fronts.length - 1 - i];
+      at[i] = front.dist;
+      power[i] = front.strength;
+    }
+    U.uFrontAt.value.fromArray(at);
+    U.uFrontPower.value.fromArray(power);
     this.updateColors();
     this.structure.update(dt, { spinIn, glow });
 
@@ -211,6 +297,7 @@ export class HelixCorridor extends ThreeVisualization {
       const a = this.time * (0.5 + n * 0.23) + n * Math.PI;
       lamp.position.set(Math.cos(a) * 1.2, Math.sin(a) * 1.2, -(6 + (Math.sin(this.time * 0.3 + n * 2) * 0.5 + 0.5) * 20));
       lamp.color.copy(this.white).lerp(this.levelColors[n], 0.45);
+      lamp.intensity = 8 + 22 * glow;
     });
 
     // Bank gently into the helix's turn.
