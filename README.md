@@ -376,7 +376,7 @@ each loop, so passes come in from different directions.
 | `fractal-cathedral` | flight down an endless Menger-sponge fractal, ray-marched per pixel: arches opening onto arches, lit by a headlight and fogged into the background colour. Hits fire rings of light down the nave ahead and kick the deformation; the `warp` input (bass by default — rebind it to tie the walls to another band) sets how deformed the walls are, mid how fast the deformation cycles, treble lights the haze. Options: `speed` (0.1–1.5; the old names `slow`, `med`, `fast` still work), `deform` (`twist` wrings each cell, `ripple` makes walls flow like liquid, `breathe` opens and closes the holes at every scale until walls thin to lace), `deformAmount` (0–2.5; or `off`, `low`, `med`, `high`). Draws in the background layer, at half resolution by default (`RESOLUTION`) | `perlin-glow` |
 | `spectrum-terrain` | low flight along a valley made of the song's history: rows laid at the horizon from the live spectrum scroll toward the camera, treble rippling the floor and bass heaving the canyon walls, over noise ridges. Hits roll waves of light out to the horizon; the sky is left transparent for a background layer to fill | `road` |
 | `nebula` | a cloud of 150k motes (option `count`), watched from `distance`; motes swell and soften with nearness, so the close pass of `orbit` skims through blurred structure. Option `shape`: `spiral` (default) and `barred` galaxies (with `arms`, 1–6), `ring` (a core inside a detached ring), `vortex` (a whirlpool spiralling down a funnel into a drain), `quasar` (a thin disc firing two corkscrewing jets from its poles), `shell` (a planetary nebula's hourglass lobes round a hot star). Bands of colour flow outward through it at a rate, and brightness, set by the `color` input — upper mids by default, rebindable to any band. Hits launch shockwave shells from the core that shove and light the motes they pass; mid turns it, treble sparkles | `particles` |
-| `helix-corridor` | flight down the axis of intertwined helical strands of lit, tumbling solids. Hits send swells rippling down the corridor that push shapes outward and flash them; mid turns the helix, treble makes the solids glow. Options `shape` (`octahedron`, `cube`, `torus`, `tetrahedron`) and `strands` | `tunnel` |
+| `helix-corridor` | flight down the axis of intertwined helical vines of lit buds. Hits send waves of blooming racing down the corridor: each bud the wave passes unfolds whorl by whorl, as far as the hit was hard, then slowly folds shut — outsides in `lineColor`, insides and glowing hearts in `accentColor`, petal tips and hearts reaching `peakColor` on the hardest hits. The `open` input (overall loudness by default) holds every bud part-open between hits, so quiet passages are a spiral of closed buds and loud ones are in flower; mid turns the helix, treble makes the opened insides glow. Options `shape` (`lotus`, `dahlia` — thirty petals on the golden angle, unfolding from the rim inward —, `lily`, `crystal` — an octahedron whose faces hinge open into a star) and `strands` | `tunnel` |
 | `tesseract` | a 4D polytope rotating through all six of its planes, projected into 3D and drawn as lit tubes and glowing beads sized by their depth in w — rotations through w turn it inside out. Hits whip it through w and swell it. Option `shape`: `tesseract`, `24-cell` (default), or `600-cell` (720 edges); and `distance` | `rolling-ball` |
 
 **Glyphs** — textures, tessellations and growth built from a small drawing
@@ -589,7 +589,7 @@ options on, so names they share carry over.
 | `fractal-cathedral` | `palette`, `speed` 0.55 (0.1–1.5), `deform`, `deformAmount` 1 (0–2.5) |
 | `spectrum-terrain` | `palette`, `speed` 11 (2–30), `height` 7.5 (1–20), `mountains` 7 (0–20) |
 | `nebula` | `palette`, `distance`, `shape`, `arms` 3 (1–6), `count` 150000 (10000–400000), `size` 1 (0.3–3), `swirl` 1 (0–3) |
-| `helix-corridor` | `palette`, `shape`, `strands` 4 (1–8), `density` 150 (30–400), `radius` 2.4 (0.8–6), `twist` 0.32 (0–1.5), `size` 0.24 (0.05–0.8), `speed` 9 (1–30) |
+| `helix-corridor` | `palette`, `shape` (`lotus`, `dahlia`, `lily`, `crystal`), `strands` 4 (1–8), `density` 150 (30–400), `radius` 2.4 (0.8–6), `twist` 0.32 (0–1.5), `size` 0.24 (0.05–0.8), `speed` 9 (1–30) |
 | `tesseract` | `palette`, `shape`, `distance`, `wDistance` 2.2 (1.3–5), `tube` 0.028 (0.005–0.08), `bead` 0.065 (0.01–0.15) |
 | `glyph-current` | `glyph`, `count` 2200 (200–6000), `scale` 1 (0.4–3), `seed`, `trail` 1.6 (0.2–6) |
 | `glyph-crystal` | `glyph`, `size`, `grain`, `edges`, `nucleus` 0.12 (0.03–0.4), `hueRate` 0.9 (0–3) |
@@ -823,8 +823,8 @@ colour that only shows at the extremes of the sound. Almost every
 visualization pushes some part of itself toward it as a hit's `impact` (or a level slot)
 rises past `peakAbove`, reaching it at 1: radial-burst rings from the
 hardest kicks, the attractors' cloud on the biggest jolts, the brightest
-nodal lines of `glyph-cymatics`, a tesseract's beads, the crest of a
-helix-corridor swell. Lower `peakAbove` and it shows more often; raise it
+nodal lines of `glyph-cymatics`, a tesseract's beads, the petal tips and
+hearts of helix-corridor's fullest blooms. Lower `peakAbove` and it shows more often; raise it
 and only the heaviest hits reach it.
 
 ```js
