@@ -147,6 +147,8 @@ const viz = new GloamingKit({
     },
   ],
   styleFade: 0.3,   // optional; seconds, time constant for style transitions
+  fade: 0.6,        // optional; seconds an entry takes to come and go
+  transition: 'fade', // optional; or 'cut', 'wipe-left', 'iris', … (see Transitions)
   // optional — defaults to DEFAULT_TRIGGERS (see Triggers below):
   triggers: [
     { name: TRIGGER.BASS,  band: [40, 130],     threshold: 0.6, cooldown: 0.15 },
@@ -797,8 +799,37 @@ visualizations: [
   presence follow the music.
 
 Placement, clip and blend are part of an entry's identity: change one and it
-is a new instance, crossfading from the old one. Opacity and style are not,
-so an entry that carries on into the next window eases to its new values.
+is a new instance, transitioning from the old one. Opacity, style, `fade`
+and `transition` are not, so an entry that carries on into the next window
+eases to its new opacity and style and stays on screen.
+
+### Transitions
+
+How an entry comes on and goes off is its `transition`, over `fade`
+seconds. Either can be set on a window, for all its entries, or on an entry,
+which wins; the engine's own default is a 0.6 s fade, changed with the
+constructor's `fade` and `transition` options.
+
+```js
+{ from: 30, to: 60, transition: 'wipe-left', fade: 1.2, visualizations: [
+    'tunnel',
+    { id: 'scanlines', transition: 'cut' },
+] }
+```
+
+| transition | what it does |
+|------------|--------------|
+| `fade` | crossfades by alpha (the default) |
+| `cut` | on or off in one frame; `fade` is ignored |
+| `wipe-left`, `wipe-right`, `wipe-up`, `wipe-down` | a hard edge sweeps across the entry's region in that direction, revealing it on the way in and hiding it on the way out |
+| `iris` | a circle opens from the region's centre to reveal it; on the way out a hole opens there instead, eating it from the centre outward |
+
+An entry leaves with the transition of the window it was last in. The way
+out is the complement of the way in, so an outgoing and an incoming entry
+with the same transition and `fade` share one edge, with nothing showing
+between them: give both windows `transition: 'wipe-left'` for a clean
+section change. Wipes and the iris are built from the region and its
+clip, so a placed entry wipes within its own region. `TRANSITIONS` lists them.
 
 Feedback backgrounds and overlay treatments read only the part of the frame
 under their own region, in its own orientation, so a placed `kaleidoscope`
@@ -832,7 +863,8 @@ describe('thomas');
 //   inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
 //   options: [{ name: 'distance', kind: 'enum', values: ['near', 'med', 'far'], default: 'near' }],
 //   universal: [{ name: 'place', kind: 'place', fields: [...] }, { name: 'clip', … }, { name: 'blend', … },
-//               { name: 'opacity', … }, { name: 'style', kind: 'style' }],
+//               { name: 'opacity', … }, { name: 'style', kind: 'style' }, { name: 'transition', … },
+//               { name: 'fade', … }],
 // }
 
 catalog();
@@ -848,7 +880,7 @@ last. `CATEGORY` holds the ids as constants, like `VIZ`. The demo's timeline
 editor is built entirely from `catalog()`.
 
 `universal` describes the entry fields every visualization accepts (see
-Placement and blending, and Entry styles). They are top-level keys of a
+Placement and blending, Transitions, and Entry styles). They are top-level keys of a
 timeline entry, not `options`, and the list is the same for every id.
 
 Enum defaults are reported per class, so `describe()` gives `thomas` a default

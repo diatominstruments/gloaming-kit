@@ -8,9 +8,11 @@ import { compileLevel, resolveEvent, referencedTriggers } from './signals.js';
 import { easeStyle } from './style.js';
 import { ThreeStage } from './three-stage.js';
 import { approach, clamp01 } from './util.js';
-import { regionOf, enterRegion, clipOf, blendOf } from './placement.js';
+import {
+  regionOf, enterRegion, clipOf, blendOf, transitionOf, revealOf,
+} from './placement.js';
 
-const FADE_SECONDS = 0.6;
+const FADE_SECONDS = 0.6;   // default transition length
 const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
 
 /**
@@ -57,10 +59,14 @@ const styleTarget = (shared, spec) => {
 export class GloamingKit extends Emitter {
   constructor({
     canvas, style = {}, timeline = [], triggers = DEFAULT_TRIGGERS, styleFade = STYLE_TAU,
+    fade = FADE_SECONDS, transition = 'fade',
     audioContext, monitor = true, three = null, enable3D = true, resolution3D = 1,
   } = {}) {
     super();
     this.canvas = canvas;
+    // How entries come and go when neither they nor their window say.
+    this.fade = fade;
+    this.transition = transition;
     this.ctx2d = canvas.getContext('2d');
 
     // The shared WebGL renderer, created when the first 3D visualization
@@ -97,7 +103,7 @@ export class GloamingKit extends Emitter {
     this.analyzer = new Analyzer(this.player, { triggers });
     this.timeline = new Timeline(timeline);
 
-    // instance key -> { viz, spec, style, region, alpha, leaving, … } for
+    // instance key -> { viz, spec, style, region, progress, leaving, … } for
     // everything on screen.
     this.active = new Map();
     this.time = 0;   // song time of the current tick, for entries spawned in it
@@ -226,7 +232,7 @@ export class GloamingKit extends Emitter {
         // Nothing to draw in its place.
         this.active.delete(key);
       } else {
-        next.alpha = entry.alpha;
+        next.progress = entry.progress;
         next.leaving = entry.leaving;
         next.opacityValue = entry.opacityValue;
         Object.assign(next.style, entry.style);
@@ -346,17 +352,24 @@ export class GloamingKit extends Emitter {
     // Map's insertion order (spawn order) still decides.
     const ordered = [...this.active].sort(([, a], [, b]) => a.rank - b.rank);
     for (const [key, entry] of ordered) {
-      entry.alpha += (entry.leaving ? -1 : 1) * (dt / FADE_SECONDS);
-      if (entry.leaving && entry.alpha <= 0) {
+      // Progress through the transition: 0 off, 1 fully on.
+      const { spec } = entry;
+      const transition = entry.transition;
+      const fade = transition === 'cut' ? 0 : (spec.fade ?? this.fade);
+      const rate = fade > 0 ? dt / fade : 1;
+      entry.progress += (entry.leaving ? -1 : 1) * rate;
+      if (entry.leaving && entry.progress <= 0) {
         this.retire(entry);
         this.active.delete(key);
         continue;
       }
-      entry.alpha = Math.min(entry.alpha, 1);
+      entry.progress = Math.min(entry.progress, 1);
+      const reveal = revealOf(transition, entry.progress, entry.leaving, entry.region.w, entry.region.h);
 
       entry.viz.onFrame(frame);
       entry.viz.updateInputs(frame, dt, events);
-      this.drawEntry(ctx, entry, entry.alpha * this.opacityOf(entry, frame, dt, events), dt);
+      const opacity = this.opacityOf(entry, frame, dt, events);
+      this.drawEntry(ctx, entry, reveal.alpha * opacity, dt, reveal.clip);
     }
 
     // The finished frame, for visualizations that feed it back into the
@@ -371,11 +384,11 @@ export class GloamingKit extends Emitter {
    * each stroke against the last — and a visualization that sets its own
    * composite operation can't override it.
    */
-  drawEntry(ctx, entry, alpha, dt) {
+  drawEntry(ctx, entry, alpha, dt, reveal = null) {
     const { viz, region, clip, blend } = entry;
     if (!blend) {
       ctx.save();
-      enterRegion(ctx, region, clip);
+      enterRegion(ctx, region, clip, reveal);
       ctx.globalAlpha = alpha;
       viz.draw(ctx, dt);
       ctx.restore();
@@ -397,7 +410,7 @@ export class GloamingKit extends Emitter {
     lc.restore();
 
     ctx.save();
-    enterRegion(ctx, region, clip);
+    enterRegion(ctx, region, clip, reveal);
     ctx.globalAlpha = alpha;
     ctx.globalCompositeOperation = blend;
     ctx.drawImage(layer, 0, 0, region.w, region.h);
@@ -433,6 +446,18 @@ export class GloamingKit extends Emitter {
     return entry.opacityValue;
   }
 
+  /** An entry's transition, else the engine's default; see placement.js. */
+  transitionFor(spec) {
+    return transitionOf({ ...spec, transition: spec.transition ?? this.transition }, this.warnOnce);
+  }
+
+  warnOnce = (message) => {
+    if (!this.warned.has(message)) {
+      this.warned.add(message);
+      console.warn(message);
+    }
+  };
+
   /** Reconcile on-screen visualizations with what the timeline wants. */
   syncActive(wanted) {
     for (const [key, spec] of wanted) {
@@ -443,6 +468,7 @@ export class GloamingKit extends Emitter {
         // so the window now running may ask for different ones.
         if (entry.spec !== spec) {
           entry.spec = spec;
+          entry.transition = this.transitionFor(spec);
           this.setOpacity(entry, spec);
         }
       } else {
@@ -483,14 +509,10 @@ export class GloamingKit extends Emitter {
     });
     viz.frameView = region.view;
     const entry = {
-      viz, spec, style, region, alpha: 0, leaving: false, offs: [], rank: layerRank(VizClass.layer),
+      viz, spec, style, region, progress: 0, leaving: false, offs: [], rank: layerRank(VizClass.layer),
       clip: clipOf(spec),
-      blend: blendOf(spec, (message) => {
-        if (!this.warned.has(message)) {
-          this.warned.add(message);
-          console.warn(message);
-        }
-      }),
+      blend: blendOf(spec, this.warnOnce),
+      transition: this.transitionFor(spec),
       layer: null,
     };
     this.setOpacity(entry, spec);
@@ -544,5 +566,5 @@ export {
   register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES, LAYER, LAYERS,
 } from './visualizations/index.js';
 export { BANDS, TRIGGER, TRIGGER_KINDS, DEFAULT_TRIGGERS } from './analyzer.js';
-export { BLENDS, CLIPS } from './placement.js';
+export { BLENDS, CLIPS, TRANSITIONS } from './placement.js';
 export { impact } from './util.js';

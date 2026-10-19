@@ -47,6 +47,25 @@ export const BLENDS = [
 /** The named shapes `clip` accepts; it also takes an object, see above. */
 export const CLIPS = ['rect', 'circle', 'ellipse', 'left', 'right', 'top', 'bottom', 'none'];
 
+/**
+ * How an entry comes and goes, over its `fade` seconds:
+ *
+ *   'fade'                       crossfade by alpha (the default)
+ *   'cut'                        on and off within one frame; `fade` is ignored
+ *   'wipe-left' | 'wipe-right'   a hard edge sweeps across the region in that
+ *   'wipe-up' | 'wipe-down'      direction, revealing it on the way in and
+ *                                hiding it on the way out
+ *   'iris'                       a circle opens from the region's centre to
+ *                                reveal it; on the way out a hole opens there
+ *                                instead, eating it from the centre outward
+ *
+ * An entry leaves with the transition it came in with, or the one its last
+ * window gave it. The way out is the complement of the way in, eased the
+ * same, so an entry leaving and the next arriving with the same transition
+ * over the same time share one edge, with nothing showing between them.
+ */
+export const TRANSITIONS = ['fade', 'cut', 'wipe-left', 'wipe-right', 'wipe-up', 'wipe-down', 'iris'];
+
 const FLIPS = { x: [-1, 1], y: [1, -1], xy: [-1, -1] };
 
 /**
@@ -69,6 +88,8 @@ export const UNIVERSAL = [
   { name: 'blend', kind: 'enum', values: BLENDS, default: 'source-over' },
   { name: 'opacity', kind: 'number', default: 1, min: 0, max: 1, step: 0.01, signal: true },
   { name: 'style', kind: 'style', default: null },
+  { name: 'transition', kind: 'enum', values: TRANSITIONS, default: 'fade' },
+  { name: 'fade', kind: 'number', default: 0.6, min: 0, max: 10, step: 0.05 },
 ];
 
 const num = (v, fallback) => (Number.isFinite(v) ? v : fallback);
@@ -114,12 +135,17 @@ export function regionOf(place, width, height, dpr, canvas) {
   };
 }
 
-/** Trace `clip` into `ctx` as a path about the origin, for a w × h region. */
+/**
+ * Trace `clip` into `ctx` as a path about the origin, for a w × h region.
+ * An object clip with `invert` (used by transitions) keeps everything in the
+ * region outside its shape; clip it with the 'evenodd' rule.
+ */
 function clipPath(ctx, clip, w, h) {
   const hw = w / 2;
   const hh = h / 2;
   ctx.beginPath();
   if (clip && typeof clip === 'object') {
+    if (clip.invert) ctx.rect(-hw, -hh, w, h);
     const x = -hw + num(clip.x, 0) * w;
     const y = -hh + num(clip.y, 0) * h;
     const cw = num(clip.w, 1) * w;
@@ -140,17 +166,48 @@ function clipPath(ctx, clip, w, h) {
   }
 }
 
+const smoothstep = (t) => t * t * (3 - 2 * t);
+
 /**
- * Set `ctx` up so drawing at (0, 0)–(r.w, r.h) lands in the region, clipped.
- * Wrap in save()/restore().
+ * What a transition shows at `progress` (0 = gone, 1 = fully on): the alpha
+ * to draw at, and a clip (in the same form as `clip`) to draw through, or
+ * null. `leaving` flips which side of a wipe's edge is kept, so that the
+ * edge travels the same way in both directions.
  */
-export function enterRegion(ctx, r, clip) {
-  if (!r.placed && !clip) return;
+export function revealOf(transition, progress, leaving, w, h) {
+  if (transition === 'fade') return { alpha: progress, clip: null };
+  if (progress >= 1 || transition === 'cut') return { alpha: 1, clip: null };
+  const p = smoothstep(progress);
+  switch (transition) {
+    case 'wipe-left': return { alpha: 1, clip: leaving ? { w: p } : { x: 1 - p, w: p } };
+    case 'wipe-right': return { alpha: 1, clip: leaving ? { x: 1 - p, w: p } : { w: p } };
+    case 'wipe-up': return { alpha: 1, clip: leaving ? { h: p } : { y: 1 - p, h: p } };
+    case 'wipe-down': return { alpha: 1, clip: leaving ? { y: 1 - p, h: p } : { h: p } };
+    case 'iris': {
+      // Large enough at 1 to cover the corners.
+      const d = (leaving ? 1 - p : p) * Math.hypot(w, h);
+      return {
+        alpha: 1,
+        clip: { x: 0.5 - d / w / 2, y: 0.5 - d / h / 2, w: d / w, h: d / h, shape: 'ellipse', invert: leaving },
+      };
+    }
+    default: return { alpha: progress, clip: null };
+  }
+}
+
+/**
+ * Set `ctx` up so drawing at (0, 0)–(r.w, r.h) lands in the region, clipped
+ * to `clip` and, if given, to a transition's `reveal` as well. Wrap in
+ * save()/restore().
+ */
+export function enterRegion(ctx, r, clip, reveal = null) {
+  if (!r.placed && !clip && !reveal) return;
   ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
   if (r.rotate) ctx.rotate(r.rotate);
-  if (clip) {
-    clipPath(ctx, clip, r.w, r.h);
-    ctx.clip();
+  for (const c of [clip, reveal]) {
+    if (!c) continue;
+    clipPath(ctx, c, r.w, r.h);
+    ctx.clip(c.invert ? 'evenodd' : 'nonzero');
   }
   if (r.fx !== 1 || r.fy !== 1) ctx.scale(r.fx, r.fy);
   ctx.translate(-r.w / 2, -r.h / 2);
@@ -161,6 +218,14 @@ export function clipOf(spec) {
   if (spec.clip === 'none') return null;
   if (spec.clip != null) return spec.clip;
   return spec.place ? 'rect' : null;
+}
+
+/** The entry's transition if it is a known one, else 'fade' (with a warning). */
+export function transitionOf(spec, warn) {
+  const { transition } = spec;
+  if (transition == null || TRANSITIONS.includes(transition)) return transition ?? 'fade';
+  warn(`GloamingKit: '${spec.id}' has unknown transition '${transition}' — fading it instead`);
+  return 'fade';
 }
 
 /** The entry's blend if it is one canvas knows, else null (with a warning). */

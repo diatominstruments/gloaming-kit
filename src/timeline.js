@@ -31,6 +31,13 @@
  * An entry's `style` layers over the window's and the base style, for that
  * instance only.
  *
+ * How entries come and go is set by `transition` (see placement.js) and
+ * `fade` (seconds), on a window for all its entries or on an entry for
+ * itself; the entry's own win:
+ *
+ *   { from: 30, to: 60, transition: 'wipe-left', fade: 1.2, visualizations: [
+ *       'tunnel', { id: 'scanlines', transition: 'cut' } ] }
+ *
  * Windows may overlap; the active set is the union of all matching windows.
  * Overlapping styles cascade in config order, so a later window's keys win
  * over an earlier one's. `to: Infinity` (or omitted) runs to the end.
@@ -41,7 +48,9 @@
  * ways is two instances, so both can be on screen at once. `style` and
  * `opacity` are left out on purpose: an instance that carries on into the
  * next window with a different colour or opacity eases to it, as window
- * styles do, rather than crossfading into a new instance.
+ * styles do, rather than crossfading into a new instance. Nor are `fade`
+ * and `transition`: they say how an instance comes and goes, not which one
+ * it is.
  */
 const keyOf = (entry) => {
   let key = entry.id;
@@ -53,7 +62,7 @@ const keyOf = (entry) => {
   return key;
 };
 
-const normalize = (entry) => {
+const normalize = (entry, window) => {
   const src = typeof entry === 'string' ? { id: entry } : entry;
   const e = {
     id: src.id,
@@ -64,6 +73,8 @@ const normalize = (entry) => {
     blend: src.blend ?? null,
     opacity: src.opacity ?? null,
     style: src.style ?? null,
+    fade: src.fade ?? window.fade ?? null,
+    transition: src.transition ?? window.transition ?? null,
   };
   return { ...e, key: keyOf(e) };
 };
@@ -77,7 +88,7 @@ export class Timeline {
     this.windows = windows.map((w) => ({
       from: w.from ?? 0,
       to: w.to ?? Infinity,
-      visualizations: (w.visualizations ?? []).map(normalize),
+      visualizations: (w.visualizations ?? []).map((entry) => normalize(entry, w)),
       style: w.style ?? null,
     }));
   }
