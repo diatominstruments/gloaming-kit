@@ -4,12 +4,29 @@ import { Analyzer, DEFAULT_TRIGGERS } from './analyzer.js';
 import { Timeline } from './timeline.js';
 import { registry, fallbackOf } from './visualizations/index.js';
 import { layerRank } from './visualizations/layers.js';
-import { resolveEvent, referencedTriggers } from './signals.js';
+import { compileLevel, resolveEvent, referencedTriggers } from './signals.js';
 import { easeStyle } from './style.js';
 import { ThreeStage } from './three-stage.js';
+import { approach, clamp01 } from './util.js';
+import { regionOf, enterRegion, clipOf, blendOf } from './placement.js';
 
 const FADE_SECONDS = 0.6;
 const STYLE_TAU = 0.3;   // seconds; time constant for style transitions
+
+/**
+ * The style an entry eases toward: `shared` (base plus window styles) with
+ * the entry's own style over it. `shadowColor: null` means "track lineColor";
+ * it is resolved here, after the entry's style, so the glow travels with
+ * whichever line colour the entry ends up with instead of snapping when a
+ * window changes it. `peakColor: null` stays null: it means "no third
+ * colour", and every visualization then draws exactly what it drew before
+ * there was one.
+ */
+const styleTarget = (shared, spec) => {
+  const target = spec?.style ? { ...shared, ...spec.style } : { ...shared };
+  if (target.shadowColor == null) target.shadowColor = target.lineColor;
+  return target;
+};
 
 /**
  * GloamingKit — the framework entry point. Wires player → analyzer → active
@@ -55,9 +72,12 @@ export class GloamingKit extends Emitter {
     this.warned = new Set();   // ids already warned about, so a warning isn't per-frame
 
     // `baseStyle` is what the app configured; `style` is the live, animated
-    // one that windows pull around and that visualizations hold a reference
-    // to. It is mutated in place, never replaced — swapping it would orphan
-    // every active visualization's `this.style`.
+    // one that windows pull around, and what the background is filled with.
+    // Each active entry has a live style of its own as well (`entry.style`),
+    // eased toward base, window and entry style in turn, which is what its
+    // visualization holds a reference to. All of them are mutated in place,
+    // never replaced — swapping one would orphan a visualization's
+    // `this.style`.
     this.baseStyle = {
       background: '#0a0a12',
       lineColor: '#7fffd4',
@@ -77,8 +97,10 @@ export class GloamingKit extends Emitter {
     this.analyzer = new Analyzer(this.player, { triggers });
     this.timeline = new Timeline(timeline);
 
-    // instance key -> { viz, alpha, leaving } for everything on screen.
+    // instance key -> { viz, spec, style, region, alpha, leaving, … } for
+    // everything on screen.
     this.active = new Map();
+    this.time = 0;   // song time of the current tick, for entries spawned in it
     this.rafId = null;
     this.lastTick = 0;
 
@@ -110,36 +132,45 @@ export class GloamingKit extends Emitter {
   }
 
   setStyle(patch) {
-    // Applied to both: the base is what window patches layer on top of, and
-    // the live copy is snapped so a UI colour picker responds immediately
-    // rather than easing. A window override still wins on the next frame.
+    // Applied to the base, which window patches layer on top of, and to the
+    // live copies, snapped so a UI colour picker responds immediately rather
+    // than easing. A window override still wins on the next frame, and an
+    // entry's own style keeps the keys it sets.
     Object.assign(this.baseStyle, patch);
     Object.assign(this.style, patch);
-    for (const entry of this.active.values()) entry.viz.style = this.style;
+    for (const entry of this.active.values()) {
+      const own = entry.spec.style;
+      for (const [key, value] of Object.entries(patch)) {
+        if (!own || !(key in own)) entry.style[key] = value;
+      }
+      entry.viz.style = entry.style;
+    }
   }
 
-  /** Ease the live style toward whatever the timeline asks for at time t. */
+  /**
+   * Ease the live styles toward whatever the timeline asks for at time t:
+   * the shared one, and each entry's with its own style on top.
+   */
   updateStyle(time, dt) {
-    const target = { ...this.baseStyle, ...this.timeline.styleAt(time) };
-    // `shadowColor: null` means "track lineColor"; resolve it so the glow
-    // travels with the line instead of snapping when a window changes it.
-    if (target.shadowColor == null) target.shadowColor = target.lineColor;
-    // `peakColor: null` stays null: it means "no third colour", and every
-    // visualization then draws exactly what it drew before there was one.
+    const shared = { ...this.baseStyle, ...this.timeline.styleAt(time) };
+    const snap = this.styleDirty;
+    this.styleDirty = false;
+    this.easeTo(this.style, styleTarget(shared, null), snap, dt);
+    for (const entry of this.active.values()) {
+      this.easeTo(entry.style, styleTarget(shared, entry.spec), snap, dt);
+      if (snap) entry.opacityValue = entry.opacityTarget;
+    }
+  }
 
+  easeTo(live, target, snap, dt) {
     // Drop keys that a since-ended window introduced beyond the base style:
     // easeStyle only walks the target's keys, so nothing would ever update
     // them again and they'd shadow the base forever.
-    for (const key of Object.keys(this.style)) {
-      if (!(key in target)) delete this.style[key];
+    for (const key of Object.keys(live)) {
+      if (!(key in target)) delete live[key];
     }
-
-    if (this.styleDirty) {
-      Object.assign(this.style, target);
-      this.styleDirty = false;
-    } else {
-      easeStyle(this.style, target, this.styleFade, dt);
-    }
+    if (snap) Object.assign(live, target);
+    else easeStyle(live, target, this.styleFade, dt);
   }
 
   setTimeline(windows) {
@@ -197,6 +228,8 @@ export class GloamingKit extends Emitter {
       } else {
         next.alpha = entry.alpha;
         next.leaving = entry.leaving;
+        next.opacityValue = entry.opacityValue;
+        Object.assign(next.style, entry.style);
       }
     }
   }
@@ -239,7 +272,19 @@ export class GloamingKit extends Emitter {
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
     this.ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-    for (const entry of this.active.values()) entry.viz.resize(w, h);
+    for (const entry of this.active.values()) {
+      entry.region = this.regionFor(entry.spec);
+      entry.viz.frameView = entry.region.view;
+      entry.viz.resize(entry.region.w, entry.region.h);
+    }
+  }
+
+  /** Where an entry draws on the canvas at its current size; see placement.js. */
+  regionFor(spec) {
+    return regionOf(
+      spec.place, this.canvas.clientWidth, this.canvas.clientHeight,
+      window.devicePixelRatio || 1, this.canvas,
+    );
   }
 
   startLoop() {
@@ -281,6 +326,7 @@ export class GloamingKit extends Emitter {
     }
 
     const frame = this.analyzer.update();
+    this.time = frame.time;
     this.syncActive(this.timeline.activeAt(frame.time));
     this.updateStyle(frame.time, dt);
     const events = this.analyzer.fired;
@@ -310,15 +356,81 @@ export class GloamingKit extends Emitter {
 
       entry.viz.onFrame(frame);
       entry.viz.updateInputs(frame, dt, events);
-      ctx.save();
-      ctx.globalAlpha = entry.alpha;
-      entry.viz.draw(ctx, dt);
-      ctx.restore();
+      this.drawEntry(ctx, entry, entry.alpha * this.opacityOf(entry, frame, dt, events), dt);
     }
 
     // The finished frame, for visualizations that feed it back into the
     // next one. Skipped entries were deleted above, so this is what drew.
     for (const entry of this.active.values()) entry.viz.afterFrame(ctx);
+  }
+
+  /**
+   * Draw one entry into its region: clipped, at `alpha`, and through its
+   * blend. A blended entry draws into a layer of its own first and is
+   * composited whole, so the blend applies to the picture rather than to
+   * each stroke against the last — and a visualization that sets its own
+   * composite operation can't override it.
+   */
+  drawEntry(ctx, entry, alpha, dt) {
+    const { viz, region, clip, blend } = entry;
+    if (!blend) {
+      ctx.save();
+      enterRegion(ctx, region, clip);
+      ctx.globalAlpha = alpha;
+      viz.draw(ctx, dt);
+      ctx.restore();
+      return;
+    }
+
+    const layer = entry.layer ??= document.createElement('canvas');
+    const { width, height } = region.view;
+    if (layer.width !== width || layer.height !== height) {
+      layer.width = width;
+      layer.height = height;
+    }
+    const lc = layer.getContext('2d');
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.clearRect(0, 0, width, height);
+    lc.setTransform(width / region.w, 0, 0, height / region.h, 0, 0);
+    lc.save();
+    viz.draw(lc, dt);
+    lc.restore();
+
+    ctx.save();
+    enterRegion(ctx, region, clip);
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = blend;
+    ctx.drawImage(layer, 0, 0, region.w, region.h);
+    ctx.restore();
+  }
+
+  /**
+   * (Re)compile an entry's `opacity` if it changed: a number is a target the
+   * entry eases toward like style; anything else is a level spec, read raw.
+   */
+  setOpacity(entry, spec) {
+    const o = spec.opacity;
+    const key = JSON.stringify(o ?? 1);
+    if (entry.opacityKey === key) return;
+    entry.opacityKey = key;
+    const constant = o == null || typeof o === 'number';
+    entry.opacityTarget = typeof o === 'number' ? clamp01(o) : 1;
+    entry.opacitySignal = constant ? null : compileLevel(o, `${spec.id}.opacity`);
+    entry.opacityValue ??= entry.opacityTarget;
+    if (!constant) {
+      for (const name of referencedTriggers(o)) {
+        if (!this.analyzer.hasTrigger(name)) {
+          console.warn(`GloamingKit: '${spec.id}.opacity' references trigger '${name}', which is not configured — its envelope will stay at 0`);
+        }
+      }
+    }
+  }
+
+  /** This tick's opacity for an entry, 0..1, multiplied into its fade. */
+  opacityOf(entry, frame, dt, events) {
+    if (entry.opacitySignal) return clamp01(entry.opacitySignal(frame, dt, events));
+    entry.opacityValue = approach(entry.opacityValue, entry.opacityTarget, this.styleFade, dt);
+    return entry.opacityValue;
   }
 
   /** Reconcile on-screen visualizations with what the timeline wants. */
@@ -327,6 +439,12 @@ export class GloamingKit extends Emitter {
       const entry = this.active.get(key);
       if (entry) {
         entry.leaving = false;
+        // Same instance, but style and opacity aren't part of its identity,
+        // so the window now running may ask for different ones.
+        if (entry.spec !== spec) {
+          entry.spec = spec;
+          this.setOpacity(entry, spec);
+        }
       } else {
         this.spawn(key, spec);
       }
@@ -348,17 +466,34 @@ export class GloamingKit extends Emitter {
       }
       return;
     }
+    const region = this.regionFor(spec);
+    // An unstyled entry starts from the shared live style, mid-ease and all,
+    // so it matches everything else on screen; a styled one starts at its
+    // own colours.
+    const style = spec.style
+      ? styleTarget({ ...this.baseStyle, ...this.timeline.styleAt(this.time) }, spec)
+      : { ...this.style };
     const viz = new VizClass({
-      width: this.canvas.clientWidth,
-      height: this.canvas.clientHeight,
-      style: this.style,
+      width: region.w,
+      height: region.h,
+      style,
       bind,
       options,
       stage: VizClass.renderer === '3d' ? this.stage : null,
     });
+    viz.frameView = region.view;
     const entry = {
-      viz, spec, alpha: 0, leaving: false, offs: [], rank: layerRank(VizClass.layer),
+      viz, spec, style, region, alpha: 0, leaving: false, offs: [], rank: layerRank(VizClass.layer),
+      clip: clipOf(spec),
+      blend: blendOf(spec, (message) => {
+        if (!this.warned.has(message)) {
+          this.warned.add(message);
+          console.warn(message);
+        }
+      }),
+      layer: null,
     };
+    this.setOpacity(entry, spec);
 
     // Subscribe each declared event slot to whatever trigger it's bound to.
     // Level slots need no subscription — they're polled during the frame —
@@ -409,4 +544,5 @@ export {
   register, registry, VIZ, describe, catalog, CATEGORY, CATEGORIES, LAYER, LAYERS,
 } from './visualizations/index.js';
 export { BANDS, TRIGGER, TRIGGER_KINDS, DEFAULT_TRIGGERS } from './analyzer.js';
+export { BLENDS, CLIPS } from './placement.js';
 export { impact } from './util.js';

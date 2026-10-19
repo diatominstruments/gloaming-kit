@@ -46,18 +46,20 @@ export class ThreeStage {
    * part of it that holds the image is `this.region`. Its contents are only
    * good until the next render call, so draw it out straight away.
    *
-   * A reduced scale renders into a corner of the full-size canvas rather than
-   * resizing it, so visualizations at different scales can share the stage
-   * in one frame without reallocating the drawing buffer each time.
+   * A smaller render goes into a corner of the canvas rather than resizing
+   * it, so visualizations at different scales or placed at different sizes
+   * can share the stage in one frame without reallocating the drawing buffer
+   * each time. The canvas only grows, except when the pixel ratio changes.
    */
   render(scene, camera, width, height, scale = 1) {
     const dpr = window.devicePixelRatio || 1;
-    if (width !== this.width || height !== this.height || dpr !== this.dpr) {
-      this.renderer.setPixelRatio(dpr);
-      this.renderer.setSize(width, height, false);
-      this.width = width;
-      this.height = height;
+    if (width > this.width || height > this.height || dpr !== this.dpr) {
+      const grow = dpr === this.dpr;
+      this.width = grow ? Math.max(width, this.width) : width;
+      this.height = grow ? Math.max(height, this.height) : height;
       this.dpr = dpr;
+      this.renderer.setPixelRatio(dpr);
+      this.renderer.setSize(this.width, this.height, false);
     }
     const s = Math.min(1, scale * this.scale);
     // In CSS px; three.js applies the pixel ratio. GL's origin is bottom-left,

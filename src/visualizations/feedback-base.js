@@ -1,7 +1,7 @@
 import { Visualization } from './base.js';
 import { CATEGORY } from './categories.js';
 import { LAYER } from './layers.js';
-import { fit, scratchCanvas, tint } from './frame-utils.js';
+import { grab, scratchCanvas, tint } from './frame-utils.js';
 
 /**
  * FeedbackVisualization — shared plumbing for backgrounds that redraw the
@@ -37,11 +37,11 @@ export class FeedbackVisualization extends Visualization {
   }
 
   afterFrame(ctx) {
-    const { canvas } = ctx;
-    // Resizing clears it, which is also right: an old frame at the old size
-    // would echo in the wrong place.
-    fit(this.previous, canvas.width, canvas.height);
-    this.previousCtx.drawImage(canvas, 0, 0);
+    // Only the part of the frame under this entry's region, in its own frame,
+    // so a placed, rotated or flipped background echoes in place. Resizing
+    // clears it, which is also right: an old frame at the old size would
+    // echo in the wrong place.
+    grab(this.previous, ctx.canvas, this.frameView);
     this.hasPrevious = true;
   }
 

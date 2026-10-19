@@ -16,6 +16,26 @@ export function fit(canvas, w, h) {
   return canvas;
 }
 
+/**
+ * Copy what lies under a visualization's region of the engine's canvas into
+ * `dst`, as it appears in the region's own frame (unrotated, unflipped), at
+ * device resolution. `view` is the visualization's `frameView`: the canvas,
+ * the matrix from its device pixels to the region's, and the region's size.
+ * Without one, the whole of `canvas` is copied as is.
+ */
+export function grab(dst, canvas, view = null) {
+  const src = view?.canvas ?? canvas;
+  fit(dst, view?.width ?? src.width, view?.height ?? src.height);
+  const c = dst.getContext('2d');
+  c.globalCompositeOperation = 'copy';
+  c.globalAlpha = 1;
+  if (view?.matrix) c.setTransform(view.matrix);
+  c.drawImage(src, 0, 0);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  return dst;
+}
+
 /** An offscreen canvas by name from `map`, created on first use. */
 export function scratchCanvas(map, name) {
   let canvas = map.get(name);

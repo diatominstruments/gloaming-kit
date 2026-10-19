@@ -3,6 +3,7 @@ import { CATEGORY } from './categories.js';
 import { LAYER } from './layers.js';
 import { TRIGGER } from '../analyzer.js';
 import { rgba } from '../style.js';
+import { grab } from './frame-utils.js';
 
 /**
  * Scanlines — a CRT treatment laid over everything else: slowly crawling
@@ -60,6 +61,7 @@ export class Scanlines extends Visualization {
     this.red = document.createElement('canvas');
     this.cyan = document.createElement('canvas');
     this.mixed = document.createElement('canvas');
+    this.source = document.createElement('canvas');
     this.pattern = null;
     this.patternCtx = null;
   }
@@ -98,7 +100,7 @@ export class Scanlines extends Visualization {
   }
 
   splitChannels(ctx, px) {
-    const src = ctx.canvas;
+    const src = grab(this.source, ctx.canvas, this.frameView);
     const dpr = src.width / this.width;
     const d = px * dpr;
     const red = this.channel(this.red, src, '#ff0000');
@@ -131,7 +133,8 @@ export class Scanlines extends Visualization {
     ctx.shadowBlur = 0;
 
     const px = k * (S.SPLIT_BASE + S.SPLIT_GAIN * this.split + S.ROLL_SPLIT * roll);
-    if (px * (ctx.canvas.width / this.width) >= 0.5) this.splitChannels(ctx, px);
+    const dpr = (this.frameView?.width ?? ctx.canvas.width) / this.width;
+    if (px * dpr >= 0.5) this.splitChannels(ctx, px);
 
     const base = ctx.globalAlpha;
     for (const r of this.rolls) {

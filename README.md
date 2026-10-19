@@ -96,8 +96,12 @@ SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visu
   (or, for a lull, drops away), with a cooldown, a relative 0–1 `strength`
   and an absolute 0–1 `intensity`. See [Triggers](#triggers).
 - **Timeline** ([src/timeline.js](src/timeline.js)) — maps song time to the
-  active visualizations, each with an optional routing override and an
-  optional per-window style. Windows may overlap (union wins).
+  active visualizations, each with an optional routing override, placement
+  and style, plus an optional per-window style. Windows may overlap (union
+  wins).
+- **Placement** ([src/placement.js](src/placement.js)) — an entry's region,
+  clip shape, blend mode and opacity on the canvas. See
+  [Placement and blending](#placement-and-blending).
 - **Signals** ([src/signals.js](src/signals.js)) — compiles a routing spec
   into a per-frame function. Triggers pass through envelopes so every source
   is a continuous number, which is what lets bands and hits combine.
@@ -106,8 +110,9 @@ SongPlayer ──▶ Analyzer ──▶ GloamingKit engine ──▶ active Visu
   between sections instead of cutting.
 - **GloamingKit** ([src/engine.js](src/engine.js)) — the entry point. Runs the
   animation loop, instantiates and disposes visualizations as their windows
-  come and go (with an alpha crossfade), feeds their input slots, and keeps
-  the live style moving toward the timeline's target.
+  come and go (with an alpha crossfade), feeds their input slots, draws each
+  into its region, and keeps every entry's live style moving toward the
+  timeline's target.
 
 ## Usage
 
@@ -753,6 +758,53 @@ covers what. `describe()` reports both.
 A background's darkest colour should be the style's `background`, so it
 replaces the engine's flat fill without a seam as it fades in.
 
+## Placement and blending
+
+By default every entry draws over the whole canvas. Any entry can instead be
+given a region, a clip shape, a blend mode and an opacity of its own:
+
+```js
+visualizations: [
+  // Mirrored twins: one per half, the right one flipped to face the left.
+  { id: 'eq-bars', place: { x: 0,   w: 0.5 } },
+  { id: 'eq-bars', place: { x: 0.5, w: 0.5, flip: 'x' } },
+  // Picture-in-picture, round, added onto what's beneath.
+  { id: 'radial-burst', place: { x: 0.35, y: 0.2, w: 0.3, h: 0.6 }, clip: 'circle', blend: 'lighter' },
+  // An overlay present only while the bass is.
+  { id: 'scanlines', opacity: { relative: 'bass', clamp: true } },
+]
+```
+
+- **`place`** is `{ x, y, w, h, rotate, flip }`, with position and size in
+  fractions of the canvas (defaults `0, 0, 1, 1`). The visualization is
+  created at the region's size, so bars and grids lay out to it rather than
+  being squeezed. `rotate` is in degrees about the region's centre; `flip`
+  is `'x'`, `'y'` or `'xy'`. Both are fixed: placement is a camera, and the
+  camera stays still.
+- **`clip`** is `'rect'`, `'circle'`, `'ellipse'`, `'left'`, `'right'`,
+  `'top'`, `'bottom'`, or `{ x, y, w, h, shape }` for a sub-rectangle in
+  fractions of the region (`shape` is `'rect'`, `'ellipse'` or `'circle'`).
+  It is taken in the region's frame after rotation and before the flip, so
+  `'left'` is always the half that shows on the left. A placed entry clips
+  to `'rect'` unless it says otherwise; `'none'` turns that off.
+- **`blend`** is any canvas `globalCompositeOperation` (`BLENDS` lists them):
+  `lighter` and `screen` to stack additively, `destination-out` or `xor` to
+  knock out, `difference` to invert what lies beneath. A blended entry draws
+  into a layer of its own and is composited whole, so the mode applies to the
+  picture rather than stroke by stroke.
+- **`opacity`** multiplies the entry's crossfade. A number eases between
+  windows like a style colour; any level spec (see Routing) makes the entry's
+  presence follow the music.
+
+Placement, clip and blend are part of an entry's identity: change one and it
+is a new instance, crossfading from the old one. Opacity and style are not,
+so an entry that carries on into the next window eases to its new values.
+
+Feedback backgrounds and overlay treatments read only the part of the frame
+under their own region, in its own orientation, so a placed `kaleidoscope`
+echoes in place and a `mosaic` clipped to a circle pixelates just that
+circle. 3D visualizations render at their region's size too.
+
 ## Metadata
 
 Every visualization carries descriptive metadata alongside its routing and
@@ -779,6 +831,8 @@ describe('thomas');
 //   description: 'Thomas attractor as a rotating 3D ribbon, …',
 //   inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
 //   options: [{ name: 'distance', kind: 'enum', values: ['near', 'med', 'far'], default: 'near' }],
+//   universal: [{ name: 'place', kind: 'place', fields: [...] }, { name: 'clip', … }, { name: 'blend', … },
+//               { name: 'opacity', … }, { name: 'style', kind: 'style' }],
 // }
 
 catalog();
@@ -792,6 +846,10 @@ registration order, skipping empty categories. It includes anything added via
 its own (labelled from the id) after the built-in ones, with `other` always
 last. `CATEGORY` holds the ids as constants, like `VIZ`. The demo's timeline
 editor is built entirely from `catalog()`.
+
+`universal` describes the entry fields every visualization accepts (see
+Placement and blending, and Entry styles). They are top-level keys of a
+timeline entry, not `options`, and the list is the same for every id.
 
 Enum defaults are reported per class, so `describe()` gives `thomas` a default
 `distance` of `near` and the other flow attractors `med` — the value each will
@@ -813,8 +871,24 @@ stays responsive — but a window override still wins on the next frame, so
 editing a key some window overrides will appear to spring back. Seeking snaps
 rather than gliding, so scrubbing across sections doesn't smear.
 
-Style is global: everything on screen shares one palette, so simultaneous
-visualizations can't be styled apart.
+### Entry styles
+
+A timeline entry may carry a `style` of its own, which applies to that
+instance only, over the window's style and the base style:
+
+```js
+visualizations: [
+  { id: 'perlin-glow', style: { lineColor: '#3a6ea5' } },                   // cool background
+  { id: 'particles',   style: { lineColor: '#ffb347', accentColor: '#ff5d2f' } }, // warm figure
+  'scanlines',                                                            // neutral overlay
+]
+```
+
+Each active entry has its own live style, eased the same way, so an entry
+whose style differs from one window to the next slides between them. An
+unset `shadowColor` follows the entry's `lineColor`. `setStyle()` snaps every
+entry's live style except for the keys the entry sets itself. The page
+background is always filled from the shared style.
 
 ### Peak colour
 

@@ -22,26 +22,49 @@
  *
  *   { from: 60, to: 90, visualizations: ['tunnel'], style: { lineColor: '#ffb347' } }
  *
+ * An entry may also be placed, clipped, blended and styled on its own (see
+ * placement.js for the first three):
+ *
+ *   { id: 'tunnel', place: { x: 0.5, w: 0.5 }, clip: 'circle', blend: 'screen',
+ *     opacity: 0.8, style: { lineColor: '#ffb347' } }
+ *
+ * An entry's `style` layers over the window's and the base style, for that
+ * instance only.
+ *
  * Windows may overlap; the active set is the union of all matching windows.
  * Overlapping styles cascade in config order, so a later window's keys win
  * over an earlier one's. `to: Infinity` (or omitted) runs to the end.
  */
 
 /**
- * Stable identity for an entry — the same id wired or configured two ways is
- * two instances, so both can be on screen at once.
+ * Stable identity for an entry — the same id wired, configured or placed two
+ * ways is two instances, so both can be on screen at once. `style` and
+ * `opacity` are left out on purpose: an instance that carries on into the
+ * next window with a different colour or opacity eases to it, as window
+ * styles do, rather than crossfading into a new instance.
  */
 const keyOf = (entry) => {
   let key = entry.id;
   if (entry.bind) key += `#${JSON.stringify(entry.bind)}`;
   if (entry.options) key += `@${JSON.stringify(entry.options)}`;
+  if (entry.place) key += `[${JSON.stringify(entry.place)}]`;
+  if (entry.clip) key += `|${JSON.stringify(entry.clip)}`;
+  if (entry.blend) key += `~${entry.blend}`;
   return key;
 };
 
 const normalize = (entry) => {
-  const e = typeof entry === 'string'
-    ? { id: entry, bind: null, options: null }
-    : { id: entry.id, bind: entry.bind ?? null, options: entry.options ?? null };
+  const src = typeof entry === 'string' ? { id: entry } : entry;
+  const e = {
+    id: src.id,
+    bind: src.bind ?? null,
+    options: src.options ?? null,
+    place: src.place ?? null,
+    clip: src.clip ?? null,
+    blend: src.blend ?? null,
+    opacity: src.opacity ?? null,
+    style: src.style ?? null,
+  };
   return { ...e, key: keyOf(e) };
 };
 

@@ -47,6 +47,7 @@ import { SpectralSlices } from './spectral-slices.js';
 import { Mosaic } from './mosaic.js';
 import { CATEGORY, CATEGORIES } from './categories.js';
 import { LAYER, LAYERS } from './layers.js';
+import { UNIVERSAL } from '../placement.js';
 
 export { CATEGORY, CATEGORIES, LAYER, LAYERS };
 
@@ -165,11 +166,17 @@ export function fallbackOf(V) {
  *     renderer: '2d', fallback: null,
  *     inputs:  [{ name: 'jolt', kind: 'event', default: 'bass' }, …],
  *     options: [{ name: 'distance', kind: 'enum', values: [...], default: 'near' }],
+ *     universal: [{ name: 'place', kind: 'place', … }, { name: 'clip', … }, …],
  *   }
  *
  * `renderer` is '2d' or '3d'. A 3D visualization names the id drawn in its
  * place when 3D is off as `fallback` (null if it has none), so a picker can
  * say what the viewer will actually see.
+ *
+ * `universal` lists the entry fields every visualization accepts — `place`,
+ * `clip`, `blend`, `opacity` and `style`, top-level keys of the timeline
+ * entry rather than `options` (see placement.js) — in the same shape, so an
+ * editor can offer them alongside.
  *
  * Accepts an id or a class; returns null for an unknown id.
  */
@@ -188,6 +195,7 @@ export function describe(vizOrId) {
       name, kind: def.kind, default: copy(def.default),
     })),
     options: Object.entries(V.options ?? {}).map(([name, spec]) => describeOption(name, spec)),
+    universal: copy(UNIVERSAL),
   };
 }
 

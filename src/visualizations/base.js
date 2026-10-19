@@ -80,6 +80,12 @@ export { approach, clamp01, impact } from '../util.js';
  * The engine owns the lifecycle: instances are created when their timeline
  * window starts and disposed when it ends, with an alpha fade in between.
  *
+ * `width` and `height` are the instance's own region, which is the whole
+ * canvas unless its timeline entry is placed (see placement.js); draw to
+ * them and placement, clipping and blending need nothing from the subclass.
+ * `style` is the instance's own live style, eased toward the base, window
+ * and entry styles in turn.
+ *
  * `static triggers = [...]` with `onTrigger(name, data)` still works for
  * visualizations that don't declare slots, but it can't be rerouted.
  */
@@ -94,6 +100,10 @@ export class Visualization {
     this.style = style;
     this.options = options ?? {};
     this.frame = null; // latest analyzer frame, kept by default onFrame
+    // Set by the engine: where this instance sits on the engine's canvas, for
+    // the few visualizations that copy the frame itself (see grab() in
+    // frame-utils.js). Null draws as if the canvas were all there is.
+    this.frameView = null;
 
     // Compile one signal per level slot, from the window's binding if it has
     // one and the declared default otherwise.

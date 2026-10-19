@@ -1,7 +1,7 @@
 import { Visualization } from './base.js';
 import { CATEGORY } from './categories.js';
 import { LAYER } from './layers.js';
-import { fit, scratchCanvas, tint } from './frame-utils.js';
+import { grab, scratchCanvas, tint } from './frame-utils.js';
 
 /**
  * TreatmentVisualization — shared plumbing for overlays that redraw the
@@ -30,13 +30,13 @@ export class TreatmentVisualization extends Visualization {
     this.scratches = new Map();
   }
 
-  /** Copy the frame as drawn so far into `this.current` and return it. */
+  /**
+   * Copy the frame as drawn so far into `this.current` and return it: the
+   * engine's canvas under this entry's region, in the region's own frame
+   * (see grab()), even when `ctx` is a layer of the entry's own.
+   */
   snapshot(ctx) {
-    const { canvas } = ctx;
-    fit(this.current, canvas.width, canvas.height);
-    this.currentCtx.globalCompositeOperation = 'copy';
-    this.currentCtx.drawImage(canvas, 0, 0);
-    return this.current;
+    return grab(this.current, ctx.canvas, this.frameView);
   }
 
   /** Device pixels per CSS pixel of the snapshot. */
