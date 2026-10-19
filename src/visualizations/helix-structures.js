@@ -24,6 +24,7 @@ const smoothstep = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 const mod = (a, n) => ((a % n) + n) % n;
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
 // A float literal for GLSL.
 const f = (x) => Number(x).toFixed(4);
 // A stable pseudo-random 0–1 for an integer, for per-piece variety that
@@ -34,11 +35,14 @@ const hash = (n) => {
 };
 
 export const FIELD_BUCKETS = 128;
-// The music winds extra twist into the helix over this many units ahead,
-// then holds it.
-export const WIND_REACH = 10;
 // How much wider the corridor swells where it is fully unfolded.
 export const SWELL = 0.15;
+// The music cinches the walls into chambers this long, fixed to the
+// corridor: a whole number of them along its length, so they survive its
+// wrapping round...
+export const CHAMBER = 7.5;
+// ...narrowing the waists between them by up to this much of the radius.
+export const PINCH = 0.4;
 // A front's ring of light: its half-width in units, and its brightness.
 export const FRONT_WIDTH = 1.5;
 const FRONT_GLOW = 1.6;
@@ -167,6 +171,33 @@ export class UnfoldField {
 }
 
 /**
+ * The flowers, for the structures that grow them. Every bud site has its
+ * own threshold of sustained unfolding: past it a bud grows in, so while
+ * the music holds the corridor even a little open some flowers show, and
+ * the longer it keeps it open the more of the sites fill. How far each has
+ * bloomed follows the same sustained unfolding, and breathes wider as each
+ * hit's front passes and back between beats.
+ */
+const BUDS = {
+  APPEAR: [0.1, 0.6],   // the range of the sites' thresholds
+  GROW: 0.08,           // the unfolding above its threshold over which a bud grows in
+  BLOOM: [0.15, 0.65],  // the sustained unfolding over which buds bloom
+  BREATH: 0.6,          // how far a passing front opens them further
+};
+
+/** How grown a bud site is `ahead` units in, and how far bloomed; null if bare. */
+function budAt(field, ahead, seedIndex) {
+  const held = field.sustainAt(ahead);
+  const from = BUDS.APPEAR[0] + (BUDS.APPEAR[1] - BUDS.APPEAR[0]) * hash(seedIndex + 3);
+  if (held < from) return null;
+  const breath = BUDS.BREATH * (field.at(ahead) - held);
+  return {
+    grown: smoothstep(from, from + BUDS.GROW, held),
+    bloom: clamp01(smoothstep(BUDS.BLOOM[0], BUDS.BLOOM[1], held) + breath),
+  };
+}
+
+/**
  * GLSL every structure shares: the field (uploaded as vec4s, sampled
  * between bucket centres), the corridor's shape, and the three colours.
  */
@@ -178,7 +209,7 @@ uniform float uFieldStep;    // corridor length per bucket
 uniform float uLength;
 uniform float uRadius;
 uniform float uTwist;
-uniform float uWind;         // extra twist the music winds in, radians per unit
+uniform float uPinch;        // how far the music has cinched the walls into chambers
 uniform float uPhase;        // the helix's turn
 uniform vec4 uFrontAt;       // the newest fronts' distances ahead
 uniform vec4 uFrontPower;    // and their strengths
@@ -218,21 +249,16 @@ float aheadOf(float t) {
 }
 
 // How far round the helix has turned ahead units in front of the camera.
-// The wound-in twist builds over the first stretch and then holds, so the
-// far end turns rigidly rather than whirling.
 float turnAt(float ahead) {
-  return uTwist * ahead + uWind * ${f(WIND_REACH)} * tanh(ahead / ${f(WIND_REACH)}) + uPhase;
+  return uTwist * ahead + uPhase;
 }
 
-// Its rate of turn there: radians per unit along.
-float twistAt(float ahead) {
-  float t = tanh(ahead / ${f(WIND_REACH)});
-  return uTwist + uWind * (1.0 - t * t);
-}
-
-// The corridor's radius where it is unfolded u: it swells as it opens.
-float radiusAt(float u) {
-  return uRadius * (1.0 + ${f(SWELL)} * u);
+// The corridor's radius ahead units in, where it is unfolded u: it swells
+// as it opens, and narrows at the waists between chambers as the music
+// cinches it.
+float radiusAt(float ahead, float u) {
+  float waist = pow(0.5 + 0.5 * cos(PI2 * (ahead + uFieldShift) / ${f(CHAMBER)}), 3.0);
+  return uRadius * (1.0 + ${f(SWELL)} * u) * (1.0 - ${f(PINCH)} * uPinch * waist);
 }
 
 // The rings of light the fronts carry down the corridor.
@@ -353,12 +379,13 @@ const facing = (th, tilt) => {
  * corridor unfolds the sub-strands peel apart into their own helices
  * winding round the strand's path, and further open each one's threads
  * peel apart round it in turn: four ropes become twelve helices become
- * thirty-six. All of it turns — strands round the flight line, sub-strands
- * round their strand one way, threads round their sub-strand the other —
- * and every radius follows the field, so the unravelling is continuous.
+ * thirty-six. All of it turns, slowly and steadily — strands round the
+ * flight line, sub-strands round their strand one way, threads round their
+ * sub-strand the other — and every radius follows the field, so the
+ * unravelling is continuous.
  *
- * Where it stays open beat after beat, in the most intense passages, buds
- * appear along the unwound sub-strands and bloom.
+ * With flowers on, buds sit along the sub-strands wherever the music holds
+ * the braid open, more of them the longer it stays open, blooming with it.
  */
 export class Braid {
   static W1 = 2.2;              // radians a sub-strand winds round its strand, per unit along
@@ -367,9 +394,7 @@ export class Braid {
   static R2 = [0.014, 0.17];    // a thread's from its sub-strand
   static OPEN1 = [0.05, 0.6];   // the stretch of unfolding over which each level opens
   static OPEN2 = [0.4, 0.95];
-  // Over which sustained unfolding buds appear, then open: a passage that
-  // keeps the braid open beat after beat, not a single hit.
-  static BUDS = [0.5, 0.75];
+  static TURN = [0.25, -0.4];   // rad/s sub-strands and threads turn, at the default speed
   static SEGMENTS = 900;
 
   constructor(viz) {
@@ -380,7 +405,7 @@ export class Braid {
     this.viz = viz;
     const S = viz.strands;
     const k = viz.sizeScale;
-    viz.uniforms.uThick.value = 0.016 * k;
+    viz.thick = 0.016 * k;
     this.uniforms = { uPhase1: { value: 0 }, uPhase2: { value: 0 } };
     const material = shapedMaterial(viz, {
       key: 'helix-corridor-braid',
@@ -398,9 +423,8 @@ export class Braid {
         // The strand: a helix round the flight line.
         float th = PI2 * aThread.x / uStrands + turnAt(ahead);
         vec3 n0 = vec3(cos(th), sin(th), 0.0);
-        float R = radiusAt(u);
-        float tw = twistAt(ahead);
-        vec3 dP0 = vec3(-n0.y * R * tw, n0.x * R * tw, -1.0);
+        float R = radiusAt(ahead, u);
+        vec3 dP0 = vec3(-n0.y * R * uTwist, n0.x * R * uTwist, -1.0);
         vec3 b0 = cross(normalize(dP0), n0);
         // Its three sub-strands wind round it, further out the more it has unwound...
         float r1 = mix(${f(R1[0] * k)}, ${f(R1[1])}, open1);
@@ -438,20 +462,21 @@ export class Braid {
       : null;
   }
 
-  update(dt, { spinIn, glow }) {
-    const { W1, W2 } = Braid;
+  update(dt, { glow }) {
+    const { W1, W2, TURN } = Braid;
     const { viz } = this;
-    // Sub-strands turn round their strands one way, threads the other.
+    // Sub-strands turn round their strands one way, threads the other, at
+    // a steady pace.
     const t = dt * viz.tempo;
-    this.spin1 = (this.spin1 + t * (0.25 + spinIn * 0.6)) % TAU;
-    this.spin2 = (this.spin2 - t * (0.4 + spinIn * 1.2)) % TAU;
+    this.spin1 = (this.spin1 + t * TURN[0]) % TAU;
+    this.spin2 = (this.spin2 + t * TURN[1]) % TAU;
     this.uniforms.uPhase1.value = ((W1 * viz.travel) % TAU) + this.spin1;
     this.uniforms.uPhase2.value = ((W2 * viz.travel) % TAU) + this.spin2;
     if (this.blooms) this.placeBuds(glow);
   }
 
   placeBuds(glow) {
-    const { W1, R1, OPEN1, BUDS } = Braid;
+    const { W1, R1, OPEN1 } = Braid;
     const { viz, blooms, budsPerSub } = this;
     const {
       field, strands: S, travel, time, length: L, levelColors,
@@ -465,15 +490,16 @@ export class Braid {
         for (let m = 0; m < budsPerSub; m++) {
           // Fixed to the corridor; the three sub-strands' buds staggered.
           const ahead = mod((m + j / 3) * spacing - travel, L);
-          const held = field.sustainAt(ahead);
-          if (held < BUDS[0]) continue;
+          const seedIndex = Math.round((travel + ahead) / spacing - j / 3) * 31 + i * 3 + j;
+          const bud = budAt(field, ahead, seedIndex);
+          if (!bud) continue;
           const u = field.at(ahead);
           // The sub-strand's centre here, as the shader places it.
           const th = (TAU * i) / S + viz.turnAt(ahead);
           const c = Math.cos(th);
           const s = Math.sin(th);
-          const R = viz.radiusAt(u);
-          const tw = viz.twistAt(ahead);
+          const R = viz.radiusAt(ahead, u);
+          const tw = viz.twist;
           const len = Math.hypot(R * tw, 1);
           const tx = (-s * R * tw) / len;
           const ty = (c * R * tw) / len;
@@ -483,7 +509,6 @@ export class Braid {
           const ph1 = phase1 + W1 * ahead + (TAU * j) / 3;
           const cp = Math.cos(ph1);
           const sp = Math.sin(ph1);
-          const seedIndex = Math.round((travel + ahead) / spacing - j / 3) * 31 + i * 3 + j;
           const seed = hash(seedIndex) * TAU;
           const axis = facing(th, 0.5 + 0.15 * Math.sin(time * 0.3 + seed));
           const lift = viz.uniforms.uThick.value * 2;
@@ -495,8 +520,8 @@ export class Braid {
           blooms.add(
             p, axis, [-s, c, 0],
             seed + time * (hash(seedIndex + 7) - 0.5) * 0.6,
-            viz.bloomSize * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
-            Math.min(1, Math.max(0, (held - BUDS[0]) / (BUDS[1] - BUDS[0]))),
+            viz.bloomSize * bud.grown,
+            bud.bloom,
             field.heatAt(ahead),
             levelColors[0], levelColors[1],
           );
@@ -558,13 +583,14 @@ export class Phyllotaxis {
     this.white = new THREE.Color(1, 1, 1);
   }
 
-  update(dt, { glow }) {
+  update(dt, { glow, flare }) {
     const { REVEAL, TILT } = Phyllotaxis;
     const { viz, count, spacing, c } = this;
     const {
       field, travel, length: L, spin, levelColors,
     } = viz;
-    const k = viz.sizeScale;
+    // The backbeat swells every floret.
+    const k = viz.sizeScale * (1 + 0.35 * flare);
     const M = this.mesh.instanceMatrix.array;
     const C = this.mesh.instanceColor.array;
     let shown = 0;
@@ -581,10 +607,10 @@ export class Phyllotaxis {
       for (let q = 0; q < 4; q++) hidden -= smoothstep(REVEAL[q][0], REVEAL[q][1], u);
       // Its place on the endless spiral fixes its angle.
       const index = Math.round((travel + ahead) / spacing);
-      const th = ((index * GOLDEN) % TAU) + spin + viz.windAt(ahead);
+      const th = ((index * GOLDEN) % TAU) + spin;
       const ct = Math.cos(th);
       const st = Math.sin(th);
-      const r = viz.radiusAt(u) - 0.04 * rank * k;
+      const r = viz.radiusAt(ahead, u) - 0.04 * rank * viz.sizeScale;
       const [ax, ay, az] = facing(th, TILT);
       // Across the wall, and axis × that.
       const tx = -st;
@@ -638,14 +664,13 @@ export class Phyllotaxis {
  * cells are as long as they are wide, so the diagonals run as crossing
  * spirals rather than round the wall. A thread grows from one node toward
  * the next with a tapering tip rather than appearing, and threads bow
- * alternately over and under. Knots sit at the nodes, and at the height of
- * the music buds open on the strands' knots.
+ * alternately over and under. Knots sit at the nodes, and with flowers on
+ * buds open on the strands' knots as the music holds it open.
  */
 export class Weave {
   // The unfolding over which threads of each level grow across.
   static GROW = [[-1, -0.5], [0.08, 0.42], [0.35, 0.7], [0.65, 0.95]];
   static THICK = [1, 0.7, 0.55, 0.4];
-  static BUDS = [0.5, 0.75];    // as Braid's, for buds on the knots
 
   constructor(viz) {
     const THREE = viz.THREE;
@@ -660,7 +685,7 @@ export class Weave {
     const width = (TAU * viz.radius) / this.columns;
     this.rows = Math.max(8, Math.round(viz.length / width / 2) * 2);
     this.rowStep = viz.length / this.rows;
-    viz.uniforms.uThick.value = 0.028 * k;
+    viz.thick = 0.028 * k;
 
     const arcs = [];
     const arc = (c0, r0, c1, r1, level, over) => arcs.push([c0, r0, c1, r1, level, over]);
@@ -690,7 +715,7 @@ export class Weave {
         vec3 arcPoint(float s, float start, float span) {
           float ahead = start + s * span;
           float th = PI2 * mix(aArc.x, aArc.z, s) / uColumns + turnAt(ahead);
-          float r = radiusAt(unfoldAt(ahead)) + aKind.y * 0.05 * sin(PI * s);
+          float r = radiusAt(ahead, unfoldAt(ahead)) + aKind.y * 0.05 * sin(PI * s);
           return vec3(cos(th) * r, sin(th) * r, -ahead);
         }
       `,
@@ -747,7 +772,6 @@ export class Weave {
   }
 
   update(dt, { glow }) {
-    const { BUDS } = Weave;
     const {
       viz, rows, columns, rowStep, blooms, c,
     } = this;
@@ -762,7 +786,7 @@ export class Weave {
     for (let r = 0; r < rows; r++) {
       const ahead = mod(r * rowStep - travel, L);
       const u = field.at(ahead);
-      const R = viz.radiusAt(u);
+      const R = viz.radiusAt(ahead, u);
       const light = viz.frontLight(ahead);
       for (let i = 0; i < columns; i++, n++) {
         const th = (TAU * i) / columns + viz.turnAt(ahead);
@@ -785,17 +809,17 @@ export class Weave {
 
         // Buds on every other knot of the strands proper.
         if (!blooms || i % 2 || (i / 2 + r) % 2) continue;
-        const held = field.sustainAt(ahead);
-        if (held < BUDS[0]) continue;
         const seedIndex = Math.round((travel + ahead) / rowStep) * 17 + i;
+        const bud = budAt(field, ahead, seedIndex);
+        if (!bud) continue;
         const seed = hash(seedIndex) * TAU;
         const axis = facing(th, 0.5 + 0.15 * Math.sin(time * 0.3 + seed));
         blooms.add(
           [ct * R + axis[0] * s, st * R + axis[1] * s, -ahead + axis[2] * s],
           axis, [-st, ct, 0],
           seed + time * (hash(seedIndex + 7) - 0.5) * 0.6,
-          viz.bloomSize * smoothstep(BUDS[0], (BUDS[0] + BUDS[1]) / 2, held),
-          Math.min(1, Math.max(0, (held - BUDS[0]) / (BUDS[1] - BUDS[0]))),
+          viz.bloomSize * bud.grown,
+          bud.bloom,
           field.heatAt(ahead),
           levelColors[0], levelColors[1],
         );
@@ -816,12 +840,14 @@ export class Weave {
  * Unfolding rolls it face-on to you and widens it, showing the second
  * colour on the side that faces the axis; further open, two more ribbons
  * fan out from behind it either side, and fully open their edges ruffle
- * into a frill tinted toward the finest colour. Fine ripples run along
- * every ribbon all the while — as deep as the `ruffle` option, deeper the
- * more it is open, and faster with the glow input.
+ * into a frill tinted toward the finest colour. Fine ripples run steadily
+ * along every ribbon all the while — as deep as the `ruffle` option, deeper
+ * the more it is open and with the glow input. The flare input widens them.
  */
 export class Ribbons {
   static SEGMENTS = 900;
+  static WIDTH = 0.32;   // at the default size
+  static FLARE = 0.5;    // how much wider at full flare
 
   constructor(viz) {
     const THREE = viz.THREE;
@@ -831,7 +857,8 @@ export class Ribbons {
       uWave: { value: 0 },
       uFrill: { value: 0 },
       uRuffle: { value: viz.ruffle },
-      uWidth: { value: 0.32 * viz.sizeScale },
+      uShimmer: { value: 0 },
+      uWidth: { value: Ribbons.WIDTH * viz.sizeScale },
     };
     const material = shapedMaterial(viz, {
       key: 'helix-corridor-ribbon',
@@ -844,6 +871,7 @@ export class Ribbons {
         uniform float uWave;
         uniform float uFrill;
         uniform float uRuffle;   // how deep the ripples run, from the option
+        uniform float uShimmer;  // and how much deeper the glow input makes them
         uniform float uWidth;
         varying vec3 vBack;
         varying vec3 vFine;
@@ -870,17 +898,16 @@ export class Ribbons {
           float frill = smoothstep(0.75, 1.0, u);
           float k = aRibbon.y;
           float th = PI2 * aRibbon.x / uStrands + turnAt(ahead) + k * 0.3 * fan;
-          float r = radiusAt(u) - abs(k) * 0.06;
+          float r = radiusAt(ahead, u) - abs(k) * 0.06;
           vec3 n = vec3(cos(th), sin(th), 0.0);
-          float tw = twistAt(ahead);
-          vec3 t = normalize(vec3(-n.y * r * tw, n.x * r * tw, -1.0));
+          vec3 t = normalize(vec3(-n.y * r * uTwist, n.x * r * uTwist, -1.0));
           // Shut, the ribbon is a fin edge-on to the flight line; opening,
           // it rolls face-on. A ripple runs along it either way.
           vec3 across = ribbonAcross(ahead, u, n, t);
           float w = uWidth * mix(0.06, 1.0, open) * (k == 0.0 ? 1.0 : 0.75 * fan) + 1e-4;
-          // Ripples run along the ribbon, deepening as it opens, and fully
-          // open its edges frill further.
-          float depth = uRuffle * (0.25 + 0.5 * open) + 0.6 * frill;
+          // Ripples run along the ribbon, deepening as it opens and with
+          // the glow, and fully open its edges frill further.
+          float depth = uRuffle * (0.25 + 0.5 * open) * (1.0 + uShimmer) + 0.6 * frill;
           float ruffle = depth * 0.3 * w * v * v * sin(6.0 * ahead + uFrill + 2.0 * k);
           return vec3(n.xy * r, -ahead) + across * (v * w) + cross(t, across) * ruffle;
         }
@@ -898,8 +925,7 @@ export class Ribbons {
         // How far the front face, unruffled, looks toward the axis.
         float th = PI2 * aRibbon.x / uStrands + turnAt(ahead) + aRibbon.y * 0.3 * smoothstep(0.5, 0.9, u);
         vec3 n = vec3(cos(th), sin(th), 0.0);
-        float tw = twistAt(ahead);
-        vec3 t = normalize(vec3(-n.y * uRadius * tw, n.x * uRadius * tw, -1.0));
+        vec3 t = normalize(vec3(-n.y * uRadius * uTwist, n.x * uRadius * uTwist, -1.0));
         vInward = smoothstep(-0.25, 0.25, -dot(cross(ribbonAcross(ahead, u, n, t), t), n));
         vTint = mix(uC0, uC1, ribbonOpen(u));
         vBack = uC0;
@@ -935,12 +961,15 @@ export class Ribbons {
     this.frill = 0;
   }
 
-  update(dt, { spinIn, glow }) {
+  update(dt, { glow, flare }) {
     const { viz } = this;
     const t = dt * viz.tempo;
-    this.wave = (this.wave + t * (0.8 + spinIn)) % TAU;
-    // The ripples run faster on the treble and hihats.
-    this.frill = (this.frill + t * (1.5 + 4 * glow)) % TAU;
+    // The wave and ripples run at a steady pace; the music changes their
+    // depth and the ribbons' width instead.
+    this.wave = (this.wave + t * 0.8) % TAU;
+    this.frill = (this.frill + t * 2.5) % TAU;
+    this.uniforms.uShimmer.value = Math.min(1.5, glow);
+    this.uniforms.uWidth.value = Ribbons.WIDTH * viz.sizeScale * (1 + Ribbons.FLARE * flare);
     // The ripple is fixed to the corridor as well as running along it.
     this.uniforms.uWave.value = ((0.5 * viz.travel) % TAU) + this.wave;
     this.uniforms.uFrill.value = ((6 * viz.travel) % TAU) + this.frill;
