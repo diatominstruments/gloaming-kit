@@ -24,7 +24,7 @@ export class Kaleidoscope extends FeedbackVisualization {
   static inputs = {
     reveal: { kind: 'level', default: { intensity: 'rms' } },
     spin:   { kind: 'level', default: 'mid' },
-    shift:  { kind: 'event', default: TRIGGER.SNARE },
+    shift:  { kind: 'event', default: TRIGGER.LULL },
   };
   static SEGMENTS = [4, 6, 8, 10, 12, 16];
   static options = {

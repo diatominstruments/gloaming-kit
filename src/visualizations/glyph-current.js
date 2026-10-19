@@ -36,7 +36,7 @@ export class GlyphCurrent extends Visualization {
   static category = CATEGORY.GLYPHS;
   static layer = LAYER.MAIN;
   static inputs = {
-    surge: { kind: 'event', default: TRIGGER.BASS },
+    surge: { kind: 'event', default: TRIGGER.ONSET },
     flow:  { kind: 'level', default: { intensity: 'rms' } },
     turn:  { kind: 'level', default: { intensity: 'mid' } },
     glow:  { kind: 'level', default: {

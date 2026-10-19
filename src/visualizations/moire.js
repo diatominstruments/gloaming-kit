@@ -27,7 +27,7 @@ export class Moire extends Visualization {
   static inputs = {
     shift: { kind: 'level', default: { intensity: 'bass' } },
     turn:  { kind: 'level', default: 'mid' },
-    kick:  { kind: 'event', default: TRIGGER.BASS },
+    kick:  { kind: 'event', default: TRIGGER.SNARE },
   };
   static options = {
     pattern: { kind: 'enum', values: ['rings', 'lines'], default: 'rings' },

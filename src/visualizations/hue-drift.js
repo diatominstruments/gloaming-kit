@@ -43,7 +43,7 @@ export class HueDrift extends FeedbackVisualization {
     reveal: { kind: 'level', default: { intensity: 'rms' } },
     drift:  { kind: 'level', default: 'mid' },
     swell:  { kind: 'level', default: { relative: 'bass' } },
-    jump:   { kind: 'event', default: TRIGGER.SNARE },
+    jump:   { kind: 'event', default: TRIGGER.LOUD },
   };
   static options = {
     mode:      { kind: 'enum', values: ['rotate', 'colourise'], default: 'rotate' },

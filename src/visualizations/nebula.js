@@ -158,7 +158,7 @@ export class Nebula extends ThreeVisualization {
   static fallback = 'particles';
 
   static inputs = {
-    shock:   { kind: 'event', default: TRIGGER.BASS },
+    shock:   { kind: 'event', default: TRIGGER.SNARE },
     // Drives the colour: waves of colour flow outward through the cloud at a
     // rate set by this band, and the accent spreads further when it's loud.
     // Rebind to follow another band: `bind: { color: { intensity: 'bass' } }`.

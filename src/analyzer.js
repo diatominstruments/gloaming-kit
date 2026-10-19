@@ -211,7 +211,8 @@ class Dynamics {
  * Analyzer — taps the player's output through an AnalyserNode and, once per
  * animation-loop tick (engine calls update()), emits:
  *
- *   'frame'           { time, bands, level, relative, intensity, spectrum, waveform }
+ *   'frame'           { time, duration, bands, level, relative, intensity, spectrum, waveform }
+ *      duration:  song length in seconds (Infinity for a live source)
  *      bands:     absolute energy 0..1 per coarse band (see BANDS)
  *      level:     overall RMS loudness 0..1
  *      relative:  per band and 'rms', 0..1 against recent dynamics — near 1
@@ -401,7 +402,10 @@ export class Analyzer extends Emitter {
     relative.rms = rms.relative;
     intensity.rms = rms.intensity;
 
-    const frame = { time, bands, level, relative, intensity, spectrum: this.spectrum, waveform: this.waveform };
+    const frame = {
+      time, duration: this.player.duration, bands, level, relative, intensity,
+      spectrum: this.spectrum, waveform: this.waveform,
+    };
     this.emit('frame', frame);
 
     this.fired.clear();

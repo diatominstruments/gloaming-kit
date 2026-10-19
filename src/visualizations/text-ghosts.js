@@ -32,7 +32,7 @@ export class TextGhosts extends Visualization {
   static category = CATEGORY.BACKGROUNDS;
   static layer = LAYER.BACKGROUND;
   static inputs = {
-    stamp: { kind: 'event', default: TRIGGER.BASS },
+    stamp: { kind: 'event', default: TRIGGER.SNARE },
     haze:  { kind: 'level', default: { intensity: 'rms' } },
     drift: { kind: 'level', default: 'mid' },
   };

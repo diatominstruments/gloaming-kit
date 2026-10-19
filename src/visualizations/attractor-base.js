@@ -9,7 +9,7 @@ const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill
  * AttractorBase — shared machinery for chaotic-system visualizations.
  *
  * Every attractor here is "a set of parameters, iterated": the parameters
- * orbit slowly (mid intensity sets the drift speed), bass hits jolt them to a
+ * orbit slowly (mid intensity sets the drift speed), hits jolt them to a
  * nearby region of parameter space to morph the figure, and treble sets
  * brightness. That part is identical whether the system is a 2D map drawn
  * as a point cloud or a 3D flow drawn as a ribbon, so it lives here and the
@@ -20,7 +20,7 @@ const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill
  *
  *   static PARAMS = [1.4, -2.3]   base parameter vector (any length)
  *   static DRIFT  = 0.35          amplitude of the slow parameter orbit
- *   static JOLT   = 2.55          how far a full-strength bass hit shoves them
+ *   static JOLT   = 2.55          how far a full-strength hit shoves them
  *   static SCALE  = 0.24          world units → fraction of the short screen edge
  *
  * DRIFT and JOLT accept either a scalar (applied to every parameter) or an
@@ -138,22 +138,25 @@ const ROTATION = {
  *
  *   { id: 'clifford', options: { rotation: 'rock', speed: 0.5 } }
  *
- * The turn rate rides the `spin` slot (mid intensity by default), and bass
+ * The turn rate rides the `spin` slot (mid intensity by default), and
  * hits whip it round faster for a moment and briefly swell the figure.
  *
  * The `accent` slot blends the cloud from lineColor toward accentColor. By
- * default it is an envelope on bass hits, so the figure flashes on each one
+ * default it is an envelope on snare hits, so the figure flashes on each one
  * and fades back — and past the style's `peakAbove`, on toward its
  * `peakColor`, so only the hardest hits reach the third colour. Bind it to a
  * band for a steady colour that follows the mix:
  *
- *   { id: 'clifford', bind: { accent: { trigger: 'snare', decay: 4 } } }
+ *   { id: 'clifford', bind: { accent: { trigger: 'bass', decay: 4 } } }
  *   { id: 'clifford', bind: { accent: { intensity: 'treble', smooth: 0.3 } } }
  */
 export class PointCloudAttractor extends AttractorBase {
+  // The maps answer the backbeat and the flows the kick, so a map and a flow
+  // on screen together don't move as one.
   static inputs = {
     ...AttractorBase.inputs,
-    accent: { kind: 'level', default: { trigger: TRIGGER.BASS, decay: 2.5 } },
+    jolt:   { kind: 'event', default: TRIGGER.SNARE },
+    accent: { kind: 'level', default: { trigger: TRIGGER.SNARE, decay: 2.5 } },
     spin:   { kind: 'level', default: { intensity: 'mid' } },
   };
 

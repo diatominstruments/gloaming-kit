@@ -350,7 +350,7 @@ attractors (`attractor` through `halvorsen`) are reported as their own
 | id | what it does |
 |----|--------------|
 | `lightning` | branching bolts that strike and grow outward from the impact point, revealed by an advancing frontier so forks light up in the order the charge reaches them; big hits add a screen flash |
-| `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure. Its `accent` slot blends the cloud from `lineColor` toward `accentColor`: a bass-hit envelope by default, so it flashes on hits, or bind a band for a steady shift, e.g. `bind: { accent: { intensity: 'treble', smooth: 0.3 } }` |
+| `attractor` | de Jong strange attractor point cloud; parameters orbit slowly and hits jolt them to a nearby region, morphing the figure. Its `accent` slot blends the cloud from `lineColor` toward `accentColor`: a snare-hit envelope by default, so it flashes on hits, or bind a band for a steady shift, e.g. `bind: { accent: { intensity: 'treble', smooth: 0.3 } }` |
 | `clifford` | Clifford Pickover attractor; layered and filamentary, same reactions and `accent` slot as `attractor` |
 | `bedhead` | Bedhead attractor; asymmetric swept whorls, same reactions and `accent` slot as `attractor` |
 | `thomas` | Thomas cyclically symmetric attractor as a rotating 3D ribbon, viewed from inside the lattice (`distance: 'near'`) so cells sweep past the camera; damping and lattice frequency drift to morph the structure, and hits surge the trajectory forward while whipping the spin and briefly swelling the figure |
@@ -463,11 +463,56 @@ Event slots take a trigger name. Level slots take a signal spec:
 { trigger: 'bass', decay: 4 }           // envelope on a trigger
 { sum: ['bass', { band: 'mid', gain: 0.5 }] }
 { max: [...] }                          // loudest wins
+{ min: [...] }                          // quietest wins: all must be live
+{ mul: [a, b] }                         // product: one gates the other
 [a, b]                                  // shorthand for { sum: [a, b] }
 ```
 
-Any spec object also accepts `smooth` (seconds), `curve` (exponent), `gain`
-(multiplier) and `clamp` (to 0–1), applied in that order. Because triggers
+Three sources move on their own instead of following the sound, so a mapping
+can evolve over a song or change state in steps:
+
+```js
+{ lfo: 0.05, shape: 'sine' }            // a slow oscillator: Hz, on song time
+{ progress: true }                      // song position, 0 at the start to 1 at the end
+{ hold: 'snare', pick: 'random' }       // sample-and-hold: each hit picks a new value
+```
+
+- **`lfo`** runs on song time, so it is where it should be after a seek and
+  holds still while paused. `shape` is `'sine'` (default), `'triangle'`,
+  `'saw'` or `'square'`, all 0–1. Its phase comes from `phase` (0–1), else
+  `seed`, else chance, so two instances drift apart unless told otherwise.
+- **`progress`** reads 0 for a source with no known length, such as a live
+  input.
+- **`hold`** keeps a value until the next hit of its trigger. `pick` chooses
+  the new one: `'random'` (default; repeatable with `seed`), `'impact'` (the
+  hit's own), `'cycle'` (`steps` evenly spaced levels in turn, default 4),
+  `'toggle'` (0, 1, 0, …), or any level spec, read at the instant of the hit.
+  `initial` sets the value before the first hit. Add `smooth` to glide
+  between held values instead of jumping.
+
+Any spec object also accepts these modifiers, applied in this order:
+
+| modifier | effect |
+|----------|--------|
+| `invert` | 1 − x, so quiet reads high |
+| `smooth` | seconds of easing |
+| `curve` | exponent |
+| `gain` | multiplier |
+| `offset` | added |
+| `quantize` | snapped to steps of 1/n, for stepped levels |
+| `clamp` | to 0–1 |
+
+Some combinations:
+
+```js
+{ mul: [{ relative: 'treble' }, { intensity: 'bass', curve: 2 }] }   // treble only while the bass is live
+{ lfo: 0.02, shape: 'triangle', gain: 0.5, offset: 0.25 }          // drifts between 0.25 and 0.75
+{ hold: 'lull', pick: 'cycle', steps: 3, smooth: 2 }               // a new level at every breakdown
+{ progress: true, quantize: 4 }                                     // four stages across the song
+{ intensity: 'rms', invert: true, smooth: 1 }                       // rises in the quiet passages
+```
+
+Because triggers
 become envelopes, a hit is usable anywhere a level is — including summed with
 one. A trigger envelope rises to the hit's `impact`, so it carries loudness
 as well as timing.
@@ -477,6 +522,13 @@ Pulse-like slots default to `relative` and "how hard is it going" slots to
 tracks the song. `{ sum: [{ intensity: 'treble', gain: 0.75 }, { relative:
 'treble', gain: 0.25 }] }` is a useful middle ground: mostly loudness, with
 enough movement on top to glint on the beat.
+
+Not every visualization kicks on the bass. The maps answer the snare and the
+flows the kick; spark-like figures take onsets, any new note or beat; and
+several backgrounds and overlays answer `loud`, a jump in an already loud
+mix, or `lull`, a drop into a breakdown. `lull` is rare by design: it changes
+a background at section scale, and on a track with no quiet passage it may
+never fire, leaving those backgrounds steady. Rebind it where that matters.
 
 Binding a slot to a trigger that isn't configured logs a warning rather than
 failing silently. Two windows naming the same visualization with different
@@ -495,34 +547,38 @@ intensity plus 0.25 relative.
 | `waveform` | — | `amplitude` ← rms |
 | `radial-burst` | `ring` ← bass, `scatter` ← hihat | `core` ← rel bass |
 | `polygon-pulse` | `kick` ← snare, `punch` ← bass | `sides` ← int mid, `swell` ← rel bass, `energy` ← int rms |
-| `particles` | `shove` ← bass | `twinkle` ← mix treble |
+| `particles` | `shove` ← onset | `twinkle` ← mix treble |
 | `rolling-ball` | `swerve` ← snare | `speed` ← int rms, `swell` ← rel bass |
 | `text` | — | `bounce` ← rel bass, `speed` ← int rms |
 | `road` | — | `swell` ← 0.6 int rms + 0.4 rel rms |
 | `tunnel` | — | `spin` ← int treble |
-| `starfield` | `swell` ← bass | — |
+| `starfield` | `swell` ← onset | — |
 | `lightning` | `strike` ← bass, `offshoot` ← snare, `flicker` ← hihat | `wander` ← int mid, `fork` ← int highMid |
-| `attractor`, `clifford`, `bedhead` | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed) |
+| `attractor`, `clifford`, `bedhead` | `jolt` ← snare | `drift` ← int mid, `glow` ← mix treble (smoothed), `accent` ← snare envelope, `spin` ← int mid |
 | `thomas` & other flows | `jolt` ← bass | `drift` ← int mid, `glow` ← mix treble (smoothed), `travel` ← int mid, `spin` ← int mid |
+| `fractal-cathedral` | `pulse` ← loud | `morph` ← int mid, `shimmer` ← mix treble, `travel` ← int rms, `warp` ← half int, half rel bass (all smoothed) |
+| `spectrum-terrain` | `pulse` ← bass | `swell` ← 0.6 int rms + 0.4 rel rms, `sway` ← int mid (smoothed) |
+| `nebula` | `shock` ← snare | `color` ← 0.6 int + 0.4 rel highMid, `swirl` ← int mid, `twinkle` ← mix treble (all smoothed) |
+| `tesseract` | `whip` ← bass | `spin` ← int mid, `glow` ← mix treble (both smoothed) |
 | `harmonograph` | `snap` ← snare, `swell` ← bass | `twist` ← mid (compared to its own average), `size` ← rel bass (smoothed) |
-| `glyph-current` | `surge` ← bass | `flow` ← int rms, `turn` ← int mid, `glow` ← mix treble |
-| `glyph-crystal` | `seed` ← bass | `grow` ← int mid, `glow` ← mix treble |
+| `glyph-current` | `surge` ← onset | `flow` ← int rms, `turn` ← int mid, `glow` ← mix treble |
+| `glyph-crystal` | `seed` ← onset | `grow` ← int mid, `glow` ← mix treble |
 | `glyph-dendrite` | `sprout` ← bass | `grow` ← int mid, `glow` ← mix treble, `sway` ← int rms (and the whole spectrum, root to tip) |
-| `glyph-reaction` | `bloom` ← bass | `flow` ← int mid, `glow` ← int rms |
-| `glyph-cymatics` | `pulse` ← bass | `glow` ← int rms, `turn` ← int mid, `detail` ← mix treble |
-| `perlin-glow` | `flare` ← bass | `glow` ← int rms, `flow` ← mid |
+| `glyph-reaction` | `bloom` ← snare | `flow` ← int mid, `glow` ← int rms |
+| `glyph-cymatics` | `pulse` ← loud | `glow` ← int rms, `turn` ← int mid, `detail` ← mix treble |
+| `perlin-glow` | `flare` ← loud | `glow` ← int rms, `flow` ← mid |
 | `infinity-mirror` | `flip` ← snare | `reveal` ← rel bass (fast rise, slow fall), `turn` ← mid |
-| `kaleidoscope` | `shift` ← snare | `reveal` ← int rms, `spin` ← mid |
+| `kaleidoscope` | `shift` ← lull | `reveal` ← int rms, `spin` ← mid |
 | `wallpaper` | `shift` ← snare | `reveal` ← int rms, `breathe` ← rel bass, `slide` ← mid, `tint` ← rel treble |
-| `zoom-burst` | `kick` ← bass | `reveal` ← int rms, `stretch` ← rel bass, `wander` ← mid, `tint` ← rel treble |
-| `hue-drift` | `jump` ← snare | `reveal` ← int rms, `drift` ← mid, `swell` ← rel bass |
-| `text-ghosts` | `stamp` ← bass | `haze` ← int rms, `drift` ← mid |
-| `dot-grid` | `ripple` ← bass | `swell` ← int rms, `flow` ← mid |
-| `moire` | `kick` ← bass | `shift` ← int bass, `turn` ← mid |
-| `light-leaks` | `bloom` ← bass | `warmth` ← int rms, `drift` ← mid |
+| `zoom-burst` | `kick` ← onset | `reveal` ← int rms, `stretch` ← rel bass, `wander` ← mid, `tint` ← rel treble |
+| `hue-drift` | `jump` ← loud | `reveal` ← int rms, `drift` ← mid, `swell` ← rel bass |
+| `text-ghosts` | `stamp` ← snare | `haze` ← int rms, `drift` ← mid |
+| `dot-grid` | `ripple` ← tom | `swell` ← int rms, `flow` ← mid |
+| `moire` | `kick` ← snare | `shift` ← int bass, `turn` ← mid |
+| `light-leaks` | `bloom` ← lull | `warmth` ← int rms, `drift` ← mid |
 | `scanlines` | `roll` ← snare | `split` ← rel bass |
-| `bloom` | `flare` ← bass | `reveal` ← int rms, `spread` ← rel bass, `tint` ← rel treble |
-| `reflecting-pool` | `splash` ← bass | `reveal` ← int rms, `current` ← mid, `tide` ← rel bass, `glow` ← rel treble |
+| `bloom` | `flare` ← loud | `reveal` ← int rms, `spread` ← rel bass, `tint` ← rel treble |
+| `reflecting-pool` | `splash` ← onset | `reveal` ← int rms, `current` ← mid, `tide` ← rel bass, `glow` ← rel treble |
 | `spectral-slices` | `jolt` ← snare | `reveal` ← int rms, `tint` ← rel treble (and the whole spectrum, strip by strip) |
 | `mosaic` | `pulse` ← snare | `swell` ← rel bass, `glow` ← int rms, `tint` ← rel treble |
 

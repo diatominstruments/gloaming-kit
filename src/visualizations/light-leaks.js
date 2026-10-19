@@ -25,7 +25,7 @@ export class LightLeaks extends Visualization {
   static inputs = {
     warmth: { kind: 'level', default: { intensity: 'rms' } },
     drift:  { kind: 'level', default: 'mid' },
-    bloom:  { kind: 'event', default: TRIGGER.BASS },
+    bloom:  { kind: 'event', default: TRIGGER.LULL },
   };
 
   static DISCS = 14;

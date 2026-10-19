@@ -4,7 +4,7 @@ import { TRIGGER } from '../analyzer.js';
 
 /**
  * Starfield — classic fly-through. Stars stream past the viewer with
- * motion streaks; bass hits make the stars swell.
+ * motion streaks; hits (onsets by default) make the stars swell.
  *
  * Cruise speed is deliberately constant. Reacting to loudness made the
  * field surge and stall frame to frame, which reads as jerky rather than
@@ -17,7 +17,7 @@ export class Starfield extends Visualization {
   static category = CATEGORY.MOTION;
 
   static inputs = {
-    swell: { kind: 'event', default: TRIGGER.BASS },
+    swell: { kind: 'event', default: TRIGGER.ONSET },
   };
 
   static SPEED = 0.5;   // depth units per second

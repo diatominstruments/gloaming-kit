@@ -40,7 +40,7 @@ export class GlyphCymatics extends Visualization {
   static category = CATEGORY.GLYPHS;
   static layer = LAYER.BACKGROUND;
   static inputs = {
-    pulse:  { kind: 'event', default: TRIGGER.BASS },
+    pulse:  { kind: 'event', default: TRIGGER.LOUD },
     glow:   { kind: 'level', default: { intensity: 'rms' } },
     turn:   { kind: 'level', default: { intensity: 'mid' } },
     detail: { kind: 'level', default: {

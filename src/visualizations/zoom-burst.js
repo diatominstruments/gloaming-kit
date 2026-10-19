@@ -32,13 +32,13 @@ import { TRIGGER } from '../analyzer.js';
 export class ZoomBurst extends FeedbackVisualization {
   static id = 'zoom-burst';
   static label = 'Zoom Burst';
-  static description = 'The screen streaking outward from a roaming point in fading copies; kicks fling the streaks out and throw the point.';
+  static description = 'The screen streaking outward from a roaming point in fading copies; kicks fling the streaks out and hits throw the point.';
   static inputs = {
     reveal:  { kind: 'level', default: { intensity: 'rms' } },
     stretch: { kind: 'level', default: { relative: 'bass' } },
     wander:  { kind: 'level', default: 'mid' },
     tint:    { kind: 'level', default: { relative: 'treble' } },
-    kick:    { kind: 'event', default: TRIGGER.BASS },
+    kick:    { kind: 'event', default: TRIGGER.ONSET },
   };
   static options = {
     copies:    { kind: 'number', default: 3, min: 1, max: 8, step: 1 },

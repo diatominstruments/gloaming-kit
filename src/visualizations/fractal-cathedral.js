@@ -68,7 +68,7 @@ export class FractalCathedral extends ThreeVisualization {
   static fallback = 'perlin-glow';
 
   static inputs = {
-    pulse:   { kind: 'event', default: TRIGGER.BASS },
+    pulse:   { kind: 'event', default: TRIGGER.LOUD },
     morph:   { kind: 'level', default: { intensity: 'mid', smooth: 0.5 } },
     shimmer: { kind: 'level', default: {
       sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],

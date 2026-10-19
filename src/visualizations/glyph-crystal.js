@@ -42,7 +42,7 @@ export class GlyphCrystal extends Visualization {
   static category = CATEGORY.GLYPHS;
   static layer = LAYER.BACKGROUND;
   static inputs = {
-    seed: { kind: 'event', default: TRIGGER.BASS },
+    seed: { kind: 'event', default: TRIGGER.ONSET },
     grow: { kind: 'level', default: { intensity: 'mid' } },
     glow: { kind: 'level', default: {
       sum: [{ intensity: 'treble', gain: 0.75 }, { relative: 'treble', gain: 0.25 }],

@@ -38,7 +38,7 @@ export class ReflectingPool extends TreatmentVisualization {
     current: { kind: 'level', default: 'mid' },
     tide:    { kind: 'level', default: { relative: 'bass' } },
     glow:    { kind: 'level', default: { relative: 'treble' } },
-    splash:  { kind: 'event', default: TRIGGER.BASS },
+    splash:  { kind: 'event', default: TRIGGER.ONSET },
   };
   static options = {
     waterline:  { kind: 'number', default: 0.6, min: 0.2, max: 0.9, step: 0.01 },

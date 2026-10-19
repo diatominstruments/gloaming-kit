@@ -29,7 +29,7 @@ export class DotGrid extends Visualization {
   static inputs = {
     swell:  { kind: 'level', default: { intensity: 'rms' } },
     flow:   { kind: 'level', default: 'mid' },
-    ripple: { kind: 'event', default: TRIGGER.BASS },
+    ripple: { kind: 'event', default: TRIGGER.TOM },
   };
   static options = {
     mode:    { kind: 'enum', values: ['noise', 'spectrum'], default: 'noise' },

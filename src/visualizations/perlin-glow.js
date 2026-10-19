@@ -49,7 +49,7 @@ export class PerlinGlow extends Visualization {
   static inputs = {
     glow:  { kind: 'level', default: { intensity: 'rms' } },
     flow:  { kind: 'level', default: 'mid' },
-    flare: { kind: 'event', default: TRIGGER.BASS },
+    flare: { kind: 'event', default: TRIGGER.LOUD },
   };
   static REACTIONS = ['grow', 'layers', 'curl'];
   static options = {

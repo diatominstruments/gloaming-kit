@@ -42,7 +42,7 @@ export class Bloom extends TreatmentVisualization {
     reveal: { kind: 'level', default: { intensity: 'rms' } },
     spread: { kind: 'level', default: { relative: 'bass' } },
     tint:   { kind: 'level', default: { relative: 'treble' } },
-    flare:  { kind: 'event', default: TRIGGER.BASS },
+    flare:  { kind: 'event', default: TRIGGER.LOUD },
   };
   static options = {
     radius:    { kind: 'number', default: 12, min: 2, max: 96, step: 1 },

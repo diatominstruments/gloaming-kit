@@ -36,7 +36,7 @@ export class GlyphReaction extends Visualization {
   static category = CATEGORY.GLYPHS;
   static layer = LAYER.BACKGROUND;
   static inputs = {
-    bloom: { kind: 'event', default: TRIGGER.BASS },
+    bloom: { kind: 'event', default: TRIGGER.SNARE },
     flow:  { kind: 'level', default: { intensity: 'mid' } },
     glow:  { kind: 'level', default: { intensity: 'rms' } },
   };

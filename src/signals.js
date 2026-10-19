@@ -1,5 +1,6 @@
 import { BANDS } from './analyzer.js';
 import { approach, clamp01, impact } from './util.js';
+import { mulberry32 } from './noise.js';
 
 /**
  * Signals — the routing layer behind input slots.
@@ -32,14 +33,39 @@ import { approach, clamp01, impact } from './util.js';
  *   { trigger: 'bass', decay: 4 }          envelope on a trigger
  *   { sum: ['bass', { band: 'mid', gain: 0.5 }] }
  *   { max: [...] }                         loudest wins
+ *   { min: [...] }                         quietest wins: both must be live
+ *   { mul: [a, b] }                        product: one gates the other
  *   [a, b]                                 shorthand for { sum: [a, b] }
  *
- * Modifiers apply to any spec object, in this order: `smooth` (seconds),
- * `curve` (exponent), `gain` (multiplier), `clamp` (to 0..1).
+ * Three sources move on their own rather than following the sound, so a
+ * mapping can evolve or change state:
+ *
+ *   { lfo: 0.05, shape: 'sine' }           a slow oscillator, `lfo` in Hz on
+ *                                          song time; shape 'sine', 'triangle',
+ *                                          'saw' or 'square'. Its phase comes
+ *                                          from `phase` (0..1), else `seed`,
+ *                                          else chance, so no two runs match
+ *                                          unless asked to
+ *   { progress: true }                     song position, 0 at the start to 1
+ *                                          at the end (0 for a live source)
+ *   { hold: 'snare', pick: 'random' }      sample-and-hold: each hit of the
+ *                                          trigger picks a new value and keeps
+ *                                          it until the next. `pick` is
+ *                                          'random' (seeded by `seed` if given),
+ *                                          'impact' (the hit's), 'cycle'
+ *                                          (`steps` evenly spaced levels in
+ *                                          turn, default 4), 'toggle' (0, 1, 0…),
+ *                                          or any level spec, read at the hit.
+ *                                          `initial` is the value before the
+ *                                          first hit
+ *
+ * Modifiers apply to any spec object, in this order: `invert` (1 − x),
+ * `smooth` (seconds), `curve` (exponent), `gain` (multiplier), `offset`
+ * (added), `quantize` (snapped to steps of 1/n), `clamp` (to 0..1).
  *
  * The set of primitives is deliberately closed — no expressions, no eval.
  * Config that can compute is a language, and a language is where this stops
- * being 150 lines.
+ * being a page of closures. New sources are primitives, not operators.
  */
 
 const warn = (path, message) => console.warn(`GloamingKit routing (${path}): ${message}`);
@@ -82,11 +108,90 @@ const envelope = (name, decay) => {
 };
 
 const combine = (specs, path, reducer, seed) => {
+  if (!Array.isArray(specs)) {
+    warn(path, 'expected a list of specs to combine');
+    return constant(0);
+  }
   const parts = specs.map((s, i) => compileLevel(s, `${path}[${i}]`));
+  if (!parts.length) return constant(0);
   return (frame, dt, events) => {
     let acc = seed;
     for (const part of parts) acc = reducer(acc, part(frame, dt, events));
     return acc;
+  };
+};
+
+const SHAPES = {
+  sine: (x) => 0.5 - 0.5 * Math.cos(2 * Math.PI * x),
+  triangle: (x) => 1 - Math.abs(1 - 2 * x),
+  saw: (x) => x,
+  square: (x) => (x < 0.5 ? 0 : 1),
+};
+
+/** A random source: seeded when the spec gives a seed, else Math.random. */
+const rngOf = (seed) => (Number.isFinite(seed) ? mulberry32(seed) : Math.random);
+
+/**
+ * Oscillator on song time, so it is where it should be after a seek and
+ * holds still while paused.
+ */
+const lfo = (spec, path) => {
+  const rate = Number(spec.lfo);
+  if (!Number.isFinite(rate) || rate < 0) {
+    warn(path, `lfo rate must be a number of Hz, got ${JSON.stringify(spec.lfo)}`);
+    return constant(0);
+  }
+  let wave = SHAPES[spec.shape ?? 'sine'];
+  if (!wave) {
+    warn(path, `unknown lfo shape '${spec.shape}' — expected one of ${Object.keys(SHAPES).join(', ')}`);
+    wave = SHAPES.sine;
+  }
+  const phase = Number.isFinite(spec.phase) ? spec.phase : rngOf(spec.seed)();
+  return (frame) => {
+    const x = (frame?.time ?? 0) * rate + phase;
+    return wave(x - Math.floor(x));
+  };
+};
+
+const progress = () => (frame) => {
+  const d = frame?.duration;
+  return d > 0 && Number.isFinite(d) ? clamp01((frame.time ?? 0) / d) : 0;
+};
+
+const PICKS = ['random', 'impact', 'cycle', 'toggle'];
+
+/** Sample-and-hold on a trigger; see the header for `pick`. */
+const hold = (spec, path) => {
+  const name = spec.hold;
+  if (typeof name !== 'string') {
+    warn(path, 'hold takes a trigger name');
+    return constant(0);
+  }
+  const pick = spec.pick ?? 'random';
+  const rng = rngOf(spec.seed);
+  const steps = Math.max(2, Math.round(spec.steps ?? 4));
+  const sampled = PICKS.includes(pick) ? null : compileLevel(pick, `${path}.pick`);
+  let count = 0;
+  let held = Number.isFinite(spec.initial) ? spec.initial : null;
+
+  const next = (hit, current) => {
+    count += 1;
+    switch (pick) {
+      case 'impact': return impact(hit);
+      case 'cycle': return (count % steps) / (steps - 1);
+      case 'toggle': return count % 2;
+      case 'random': return rng();
+      default: return current;
+    }
+  };
+
+  return (frame, dt, events) => {
+    // A sampled spec runs every frame, so its smoothing and envelopes keep time.
+    const current = sampled ? sampled(frame, dt, events) : 0;
+    if (held === null) held = pick === 'random' ? rng() : sampled ? current : 0;
+    const hit = events?.get(name);
+    if (hit) held = next(hit, current);
+    return held;
   };
 };
 
@@ -117,12 +222,26 @@ export function compileLevel(spec, path = 'input') {
       signal = combine(spec.sum, path, (a, b) => a + b, 0);
     } else if (spec.max !== undefined) {
       signal = combine(spec.max, path, Math.max, 0);
+    } else if (spec.min !== undefined) {
+      signal = combine(spec.min, path, Math.min, Infinity);
+    } else if (spec.mul !== undefined) {
+      signal = combine(spec.mul, path, (a, b) => a * b, 1);
+    } else if (spec.lfo !== undefined) {
+      signal = lfo(spec, path);
+    } else if (spec.progress) {
+      signal = progress();
+    } else if (spec.hold !== undefined) {
+      signal = hold(spec, path);
     } else {
-      warn(path, `no source in spec (expected band, relative, intensity, trigger, const, sum or max)`);
+      warn(path, 'no source in spec (expected band, relative, intensity, trigger, const, sum, max, min, mul, lfo, progress or hold)');
       signal = constant(0);
     }
 
     // Modifiers, innermost first.
+    if (spec.invert) {
+      const inner = signal;
+      signal = (f, dt, e) => 1 - inner(f, dt, e);
+    }
     if (spec.smooth) {
       const inner = signal;
       const tau = spec.smooth;
@@ -139,6 +258,16 @@ export function compileLevel(spec, path = 'input') {
       const gain = spec.gain;
       signal = (f, dt, e) => inner(f, dt, e) * gain;
     }
+    if (spec.offset) {
+      const inner = signal;
+      const offset = spec.offset;
+      signal = (f, dt, e) => inner(f, dt, e) + offset;
+    }
+    if (spec.quantize > 0) {
+      const inner = signal;
+      const n = spec.quantize;
+      signal = (f, dt, e) => Math.round(inner(f, dt, e) * n) / n;
+    }
     if (spec.clamp) {
       const inner = signal;
       signal = (f, dt, e) => clamp01(inner(f, dt, e));
@@ -153,7 +282,7 @@ export function compileLevel(spec, path = 'input') {
 
 /**
  * Every trigger name referenced anywhere in a level spec, including inside
- * sum/max nests. Exists for validation: the compiler itself never sees the
+ * nests and the trigger a `hold` samples on. Exists for validation: the compiler itself never sees the
  * analyzer, so it can't know whether an envelope's trigger is configured —
  * the engine collects the names and checks at spawn time.
  */
@@ -162,8 +291,11 @@ export function referencedTriggers(spec, into = []) {
     for (const s of spec) referencedTriggers(s, into);
   } else if (spec && typeof spec === 'object') {
     if (typeof spec.trigger === 'string') into.push(spec.trigger);
-    if (Array.isArray(spec.sum)) referencedTriggers(spec.sum, into);
-    if (Array.isArray(spec.max)) referencedTriggers(spec.max, into);
+    if (typeof spec.hold === 'string') into.push(spec.hold);
+    for (const key of ['sum', 'max', 'min', 'mul']) {
+      if (Array.isArray(spec[key])) referencedTriggers(spec[key], into);
+    }
+    if (spec.pick && typeof spec.pick === 'object') referencedTriggers(spec.pick, into);
   }
   return into;
 }

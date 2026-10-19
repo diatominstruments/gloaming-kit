@@ -3,8 +3,9 @@ import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
 
 /**
- * ParticleField — a field of motes the music shoves around. Bass hits blow
- * every mote outward from the centre; each one then springs back to the point
+ * ParticleField — a field of motes the music shoves around. Hits (onsets by
+ * default: any new note or beat) blow every mote outward from the centre;
+ * each one then springs back to the point
  * it was quietly drifting toward, so the field breathes with the beat instead
  * of dispersing. Treble makes them shimmer and swell.
  *
@@ -20,7 +21,7 @@ import { TRIGGER } from '../analyzer.js';
  * still letting a hit throw it a long way.
  *
  * And the motion has to be drawn, not merely happen. A mote is stroked as a
- * short streak along its own velocity, so a bass hit turns the field into a
+ * short streak along its own velocity, so a hit turns the field into a
  * burst of radiating lines that settles back into still dots. A dot that moves
  * and returns within a few frames reads as almost nothing; the streak is what
  * makes the hit legible.
@@ -32,7 +33,7 @@ export class ParticleField extends Visualization {
   static category = CATEGORY.CLASSIC;
 
   static inputs = {
-    shove:   { kind: 'event', default: TRIGGER.BASS },
+    shove:   { kind: 'event', default: TRIGGER.ONSET },
     // Mostly how loud the treble is, plus a little of its movement so hats
     // still sparkle in a quiet passage. Same mix as the attractors' glow.
     twinkle: { kind: 'level', default: {
@@ -189,7 +190,7 @@ export class ParticleField extends Visualization {
     ctx.stroke(glow);
 
     // Then the motes themselves, sharp, each at its own brightness. The ones
-    // still carrying a hit burn accent-coloured, so a bass beat scatters
+    // still carrying a hit burn accent-coloured, so a beat scatters
     // sparks through the field rather than just nudging it; the fastest of
     // them burn in the peak colour.
     ctx.shadowBlur = 0;
