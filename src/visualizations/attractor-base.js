@@ -26,6 +26,17 @@ const perParam = (value, n) => (Array.isArray(value) ? value : new Array(n).fill
  * DRIFT and JOLT accept either a scalar (applied to every parameter) or an
  * array with one entry per parameter, for systems whose parameters live on
  * different scales or have different tolerances for being pushed around.
+ *
+ * Every parameter is also an option, named from PARAM_NAMES ('a', 'b', …
+ * unless a system names its own), so each system is a family of figures
+ * rather than one. Its range is the base value ± (PARAM_SPAN × DRIFT +
+ * JOLT), and the moving value is clamped to that same band, so whatever the
+ * options say, the system never leaves it. For the flows PARAM_SPAN is 1:
+ * their bands were measured for stability, and outside them the figure
+ * diverges or collapses. The maps can't diverge (an escaping orbit just
+ * reseeds), so they get a wider band to explore. Two more options scale the
+ * motion: `drift` (how far the parameters wander, 0 holds them still) and
+ * `jolt` (how far a hit shoves them).
  */
 export class AttractorBase extends Visualization {
   static inputs = {
@@ -40,20 +51,60 @@ export class AttractorBase extends Visualization {
   };
 
   static PARAMS = [];
+  static PARAM_NAMES = null;   // option name per parameter; 'a', 'b', … if unset
+  static PARAM_SPAN = 1;       // option band: PARAM_SPAN × DRIFT + JOLT either side
   static DRIFT = 0;
   static JOLT = 0;
   static DRIFT_RATE = [0.05, 0.5];   // [idle, added per unit of mid intensity]
   static ALPHA = [0.2, 1];           // [floor, gain] applied to `glow`
   static JOLT_DECAY = 1.8;
 
+  /** The option name of parameter `i`. */
+  static paramName(i) {
+    return this.PARAM_NAMES?.[i] ?? String.fromCharCode(97 + i);
+  }
+
+  /** Each parameter's band, [lo, hi]; see the header. */
+  static paramBands() {
+    const n = this.PARAMS.length;
+    const drift = perParam(this.DRIFT, n);
+    const jolt = perParam(this.JOLT, n);
+    return this.PARAMS.map((p, i) => {
+      const reach = this.PARAM_SPAN * Math.abs(drift[i]) + Math.abs(jolt[i]);
+      return [p - reach, p + reach];
+    });
+  }
+
+  /**
+   * The parameter, drift and jolt options, for a subclass's options getter to
+   * spread in. Built from the class's own statics, so each system reports
+   * its own parameters and bands.
+   */
+  static paramOptions() {
+    const out = {};
+    this.paramBands().forEach(([lo, hi], i) => {
+      const step = Number(((hi - lo) / 200 || 0.001).toPrecision(1));
+      out[this.paramName(i)] = {
+        kind: 'number', default: this.PARAMS[i],
+        min: Number(lo.toPrecision(6)), max: Number(hi.toPrecision(6)), step,
+      };
+    });
+    out.drift = { kind: 'number', default: 1, min: 0, max: 2, step: 0.05 };
+    out.jolt = { kind: 'number', default: 1, min: 0, max: 2, step: 0.05 };
+    return out;
+  }
+
   constructor(opts) {
     super(opts);
-    const n = this.constructor.PARAMS.length;
+    const V = this.constructor;
+    const n = V.PARAMS.length;
     this.t = 0;
     this.jolt = new Array(n).fill(0);
-    this.params = [...this.constructor.PARAMS];
-    this.drift = perParam(this.constructor.DRIFT, n);
-    this.joltAmp = perParam(this.constructor.JOLT, n);
+    this.bands = V.paramBands();
+    this.base = V.PARAMS.map((p, i) => this.option(V.paramName(i)));
+    this.params = [...this.base];
+    this.drift = perParam(V.DRIFT, n).map((d) => d * this.option('drift'));
+    this.joltAmp = perParam(V.JOLT, n).map((j) => j * this.option('jolt'));
   }
 
   onInput(slot, data) {
@@ -62,25 +113,28 @@ export class AttractorBase extends Visualization {
       // Clamped, because hits can land faster than the decay clears them and
       // some systems diverge if the parameters wander far enough.
       const amp = this.joltAmp[i];
-      const next = this.jolt[i] + (Math.random() * 2 - 1) * strength * amp;
+      const next = this.jolt[i] + (this.random() * 2 - 1) * strength * amp;
       this.jolt[i] = Math.max(-amp, Math.min(amp, next));
     }
   }
 
   /** Advance the parameter drift and jolt decay. Fills `this.params`. */
   updateParams(dt) {
-    const { PARAMS, DRIFT_RATE, JOLT_DECAY } = this.constructor;
+    const { DRIFT_RATE, JOLT_DECAY } = this.constructor;
     // Integrated, not assigned — drift intensity sets how fast the parameters
     // travel, so a loud frame speeds the morph instead of teleporting it.
     this.t += dt * (DRIFT_RATE[0] + this.in('drift') * DRIFT_RATE[1]);
     const decay = Math.exp(-dt * JOLT_DECAY);
-    for (let i = 0; i < PARAMS.length; i++) {
+    for (let i = 0; i < this.base.length; i++) {
       this.jolt[i] *= decay;
       // Incommensurate drift rates per parameter, so the figure never
-      // retraces the same morph cycle.
-      this.params[i] = PARAMS[i]
+      // retraces the same morph cycle. Clamped to the band, which only bites
+      // when the options move the base or scale the motion up.
+      const [lo, hi] = this.bands[i];
+      const p = this.base[i]
         + Math.sin(this.t * (0.31 + i * 0.13) + i * 2.1) * this.drift[i]
         + this.jolt[i];
+      this.params[i] = Math.max(lo, Math.min(hi, p));
     }
   }
 
@@ -164,13 +218,20 @@ export class PointCloudAttractor extends AttractorBase {
   static SEED = [0.1, 0.1];
   static DOT = 1.4;
 
-  static options = {
-    rotation: { kind: 'enum', values: Object.keys(ROTATION), default: 'tumble' },
-    speed:  { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
-    points: { kind: 'number', default: PointCloudAttractor.POINTS, min: 500, max: 20000, step: 100 },
-    scale:  { kind: 'number', default: 1, min: 0.4, max: 2.5, step: 0.05 },
-    dot:    { kind: 'number', default: PointCloudAttractor.DOT, min: 0.5, max: 4, step: 0.1 },
-  };
+  // The maps reseed on escape rather than diverge, so they can roam further.
+  static PARAM_SPAN = 3;
+
+  // A getter so `this` is the subclass, which reports its own parameters.
+  static get options() {
+    return {
+      rotation: { kind: 'enum', values: Object.keys(ROTATION), default: 'tumble' },
+      speed:  { kind: 'number', default: 1, min: 0, max: 3, step: 0.1 },
+      points: { kind: 'number', default: PointCloudAttractor.POINTS, min: 500, max: 20000, step: 100 },
+      scale:  { kind: 'number', default: 1, min: 0.4, max: 2.5, step: 0.05 },
+      dot:    { kind: 'number', default: PointCloudAttractor.DOT, min: 0.5, max: 4, step: 0.1 },
+      ...this.paramOptions(),
+    };
+  }
   static LIMIT = 1e3;   // orbit escape threshold; beyond this, reseed
 
   static FOCAL = 7;           // camera distance in world units
@@ -355,9 +416,10 @@ const DISTANCE = { near: 0.15, med: 1, far: 1.6 };
  * Further options shape the ribbon without touching the integration: `trail`
  * (samples kept — how much of the attractor is drawn at once), `substeps`
  * (samples integrated per frame — how fast the head races round), and
- * `scale` (a multiplier on the system's own SCALE). H, H_LIMIT and the
- * parameter bands are deliberately not options: they are measured per system
- * for stability, and outside them the figure diverges or collapses.
+ * `scale` (a multiplier on the system's own SCALE). The equation's parameters
+ * are options too, but only within their measured bands (see AttractorBase);
+ * H and H_LIMIT are not: they are measured per system for stability, and
+ * outside them the figure diverges or collapses.
  *
  * Subclasses implement `derivative(x, y, z, p, out)`.
  */
@@ -369,13 +431,14 @@ export class FlowAttractor extends AttractorBase {
   };
 
   // A getter so `this` is the subclass, and the declared default follows each
-  // system's own DISTANCE rather than reporting the base's.
+  // system's own DISTANCE and parameters rather than reporting the base's.
   static get options() {
     return {
       distance: { kind: 'enum', values: Object.keys(DISTANCE), default: this.DISTANCE },
       trail:    { kind: 'number', default: this.TRAIL, min: 200, max: 6000, step: 100 },
       substeps: { kind: 'number', default: this.SUBSTEPS, min: 4, max: 96, step: 4 },
       scale:    { kind: 'number', default: 1, min: 0.4, max: 2.5, step: 0.05 },
+      ...this.paramOptions(),
     };
   }
 

@@ -154,7 +154,7 @@ export class HelixCorridor extends ThreeVisualization {
     this.flare = 0;    // and the flare
     this.thick = 0.02; // threads' thickness before the flare; structures set it
     this.time = 0;
-    this.hue = Math.random();
+    this.hue = this.random();
     this.white = new THREE.Color(1, 1, 1);
 
     this.field = new UnfoldField(this.length, this);

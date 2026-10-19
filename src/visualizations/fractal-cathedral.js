@@ -125,9 +125,9 @@ export class FractalCathedral extends ThreeVisualization {
     this.speed = FractalCathedral.SPEED[0] * this.pace;
     this.time = 0;
     this.kick = 0;
-    this.foldT = Math.random() * 10;
+    this.foldT = this.random() * 10;
     this.jolt = 0;
-    this.hue = Math.random();
+    this.hue = this.random();
     this.roll = 0;
     this.pulses = [];   // { age, strength }
 
@@ -164,7 +164,7 @@ export class FractalCathedral extends ThreeVisualization {
     if (slot !== 'pulse') return;
     const size = impact(data);
     const JOLT = FractalCathedral.JOLT * this.amount;
-    this.jolt = Math.max(-JOLT, Math.min(JOLT, this.jolt + (Math.random() < 0.5 ? -1 : 1) * size * JOLT));
+    this.jolt = Math.max(-JOLT, Math.min(JOLT, this.jolt + (this.random() < 0.5 ? -1 : 1) * size * JOLT));
     this.kick = Math.max(this.kick, size);
     this.pulses.push({ age: 0, strength: size });
     if (this.pulses.length > PULSES) this.pulses.shift();

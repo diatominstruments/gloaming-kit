@@ -101,7 +101,7 @@ export class Wallpaper extends FeedbackVisualization {
     const lo = Math.max(1, this.columns - this.walk);
     const hi = Math.min(8, this.columns + this.walk);
     // A random walk that turns back at either end of its range.
-    const up = this.cols <= lo || (this.cols < hi && Math.random() < 0.5);
+    const up = this.cols <= lo || (this.cols < hi && this.random() < 0.5);
     this.cols += up ? 1 : -1;
   }
 

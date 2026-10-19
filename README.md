@@ -480,7 +480,7 @@ can evolve over a song or change state in steps:
 - **`lfo`** runs on song time, so it is where it should be after a seek and
   holds still while paused. `shape` is `'sine'` (default), `'triangle'`,
   `'saw'` or `'square'`, all 0–1. Its phase comes from `phase` (0–1), else
-  `seed`, else chance, so two instances drift apart unless told otherwise.
+  `seed`, else the visualization's own `seed` (see [Seeds](#seeds)).
 - **`progress`** reads 0 for a source with no known length, such as a live
   input.
 - **`hold`** keeps a value until the next hit of its trigger. `pick` chooses
@@ -631,24 +631,42 @@ strings are cut to `maxLength`, and anything unreadable gives the default.
 
 Numbers show their default and slider range. The 3D attractors take their 2D
 parent's options, and a 3D visualization drawn as its 2D fallback passes its
-options on, so names they share carry over.
+options on, so names they share carry over. Every visualization also takes
+`seed` (see [Seeds](#seeds)), which the table leaves out.
+
+- **Attractor parameters.** Each system's equation parameters are options,
+  so one id is a family of figures. Their range is the parameter's own drift
+  and jolt band, and the moving value is clamped to it. For the flows that
+  band was measured for stability, so no setting can make the figure diverge
+  or collapse. The maps reseed instead of diverging, so their band is wider.
+  `drift` scales how far the parameters wander, 0 holding them still, and
+  `jolt` how far a hit shoves them; `describe()` reports each system's ranges.
+- **Harmonograph ratios** are text: comma-separated intervals, each two to
+  four whole numbers, one per pendulum, which a snap picks between. The
+  third pendulum turns in a circle like a rotary table and the fourth swings
+  on the diagonal; one the ratio gives no number to takes the sum (third) or
+  difference (fourth) of the first two.
+- **Glyph outlines.** `particles`, `radial-burst` and `polygon-pulse` take an
+  optional drawing (see [Glyphs](#glyphs)), blank by default. Drawn, the
+  particles' homes fill the drawing, and the burst's rings and the polygon's
+  corners follow its silhouette.
 
 | id | options |
 |----|---------|
-| `eq-bars` | `bars` 28 (8–96), `gap` 4 (0–12) |
-| `waveform` | `gain` 1 (0.25–3) |
-| `radial-burst` | `speed` 1 (0.25–3), `ticks` 6 (0–30), `fade` 1.4 (0.3–5) |
-| `polygon-pulse` | `minSides` 3 (3–12), `sideRange` 6 (0–12), `size` 0.22 (0.05–0.45), `echo` 0.62 (0–0.95) |
-| `particles` | `count` 110 (20–600), `size` 1 (0.3–4), `trail` 0.07 (0–0.3) |
+| `eq-bars` | `bars` 28 (8–96), `gap` 4 (0–12), `layout` (`linear`, `mirrored`, `radial`), `shape` (`bars`, `dots`, `line`) |
+| `waveform` | `gain` 1 (0.25–3), `layout` (`line`, `circle`, `lissajous`), `mirror` (`off`, `on`) |
+| `radial-burst` | `speed` 1 (0.25–3), `ticks` 6 (0–30), `fade` 1.4 (0.3–5), `glyph` (blank) |
+| `polygon-pulse` | `minSides` 3 (3–48), `sideRange` 6 (0–48), `size` 0.22 (0.05–0.45), `echo` 0.62 (0–0.95), `glyph` (blank) |
+| `particles` | `count` 110 (20–600), `size` 1 (0.3–4), `trail` 0.07 (0–0.3), `glyph` (blank) |
 | `road` | `speed` 9 (1–30), `spacing` 1.2 (0.3–4), `segments` 64 (16–256), `horizon` 0.42 (0.2–0.7) |
 | `tunnel` | `speed` 0.75 (0.1–3), `spacing` 0.34 (0.1–1), `segments` 48 (8–128) |
 | `rolling-ball` | `latitudes` 7 (1–20), `meridians` 12 (2–32), `radius` 0.3 (0.1–0.6) |
-| `starfield` | `count` 240 (50–1500), `speed` 0.5 (0.1–3) |
+| `starfield` | `count` 240 (50–1500), `speed` 0.5 (0.1–3), `streak` 1 (0–12), `spread` 1 (0.1–3) |
 | `lightning` | `bolts` 6 (1–12), `roughness` 0.55 (0.3–0.8), `forking` 0.1 (0–0.4) |
-| `harmonograph` | `damping` 0.12 (0–0.5), `loops` 5 (2–12) |
+| `harmonograph` | `ratios` (`'1:2,2:3,3:4,3:5,4:5,5:6'`), `pendulums` 2 (2–4), `damping` 0.12 (0–0.5), `loops` 5 (2–12) |
 | `text` | `text`, `threshold` 0.6 (0–1), `size` 0.12 (0.03–0.4) |
-| `attractor`, `clifford`, `bedhead` (and `-3d`) | `rotation`, `speed` 1 (0–3), `points` 3200 (500–20000), `scale` 1 (0.4–2.5), `dot` 1.4 (0.5–4) |
-| `thomas`, `aizawa`, `rossler`, `halvorsen` (and `-3d`) | `distance`, `trail` 1400 (200–6000), `substeps` 32 (4–96), `scale` 1 (0.4–2.5) |
+| `attractor`, `clifford`, `bedhead` (and `-3d`) | `rotation`, `speed` 1 (0–3), `points` 3200 (500–20000), `scale` 1 (0.4–2.5), `dot` 1.4 (0.5–4), parameters `a`–`d` (`a`, `b` for bedhead), `drift` 1 (0–2), `jolt` 1 (0–2) |
+| `thomas`, `aizawa`, `rossler`, `halvorsen` (and `-3d`) | `distance`, `trail` 1400 (200–6000), `substeps` 32 (4–96), `scale` 1 (0.4–2.5), the system's parameters (thomas `b`, `omega`; aizawa `a`–`f`; rossler `a`–`c`; halvorsen `a`), `drift` 1 (0–2), `jolt` 1 (0–2) |
 | `fractal-cathedral` | `palette`, `speed` 0.55 (0.1–1.5), `deform`, `deformAmount` 1 (0–2.5) |
 | `spectrum-terrain` | `palette`, `speed` 11 (2–30), `height` 7.5 (1–20), `mountains` 7 (0–20) |
 | `nebula` | `palette`, `distance`, `shape`, `arms` 3 (1–6), `count` 150000 (10000–400000), `size` 1 (0.3–3), `swirl` 1 (0–3) |
@@ -661,7 +679,7 @@ options on, so names they share carry over.
 | `glyph-cymatics` | `glyph`, `render`, `scale` 1 (0.3–3), `nodeWidth` 0.16 (0.05–0.5), `terraces` 5 (2–12) |
 | `perlin-glow` | `react`, `scale` 1 (0.25–4), `seed`, `octaves` 3 (1–5), `warp` 0.9 (0–3) |
 | `infinity-mirror` | `shape`, `shrink` 0.9 (0.7–0.98), `margin` 0.06 (0–0.3) |
-| `kaleidoscope` | `segments`, `zoom` 0.94 (0.8–1.05) |
+| `kaleidoscope` | `segments` 8 (2–48, even), `zoom` 0.94 (0.8–1.05), `originX` 0.5 (0–1), `originY` 0.5 (0–1) |
 | `wallpaper` | `columns` 3 (1–8), `rows` 0 (0–8; 0 keeps tiles square), `mirror`, `gap` 0 (0–0.3), `walk` 2 (0–6), `floor` 0.3, `depth` 0.6, `breathe` 0.12 (0–0.5), `slide` 0.3 (0–2), `tint` 0.7, `tintColor`, `tintPattern` |
 | `zoom-burst` | `copies` 3 (1–8), `step` 0.04 (0.005–0.15), `gain` 0.12 (0–0.4), `falloff` 0.65 (0.2–1), `twist` 0 (−0.2–0.2), `direction`, `wander` 0.2 (0–0.5), `blend`, `floor` 0.55, `depth` 0.35, `tint` 0.6, `tintColor`, `kick` 0.5 |
 | `hue-drift` | `mode`, `rate` 180 (0–720), `gain` 360 (0–1440), `jump` 60 (0–180), `zoom` 1.012 (0.95–1.08), `swell` 0.03 (0–0.15), `spin` 0 (−0.5–0.5), `saturate` 1 (0.5–1.5), `strength` 0.6, `direction`, `floor` 0.4, `depth` 0.45 |
@@ -674,6 +692,18 @@ options on, so names they share carry over.
 | `reflecting-pool` | `waterline` 0.6 (0.2–0.9), `strips` 64 (8–240), `ripple` 1 (0–3), `wavelength` 0.1 (0.02–0.5), `squash` 0.9 (0.4–1), `fade` 0.6, `tide` 0.08 (0–0.3), `splash` 1 (0–3), `shimmer` 0.6, `floor` 0.45, `depth` 0.55, `tint` 0.5, `tintColor` |
 | `spectral-slices` | `strips` 24 (4–96), `orientation`, `bass`, `motion`, `pattern`, `amplitude` 0.2 (0–1), `speed` 0.6 (0–3), `curve` 1.5 (0.5–4), `attack` 0.03, `release` 0.18, `gap` 0 (0–0.4), `edges` 0.4, `floor` 0.25, `depth` 0.75, `tint` 0.7, `tintColor`, `jolt` 0.15 (0–0.5) |
 | `mosaic` | `block` 8 (2–64), `gain` 28 (0–128), `style`, `gutter` 0.2 (0–0.6), `boost` 3 (1–8), `drift` 0.3 (0–3), `pulse` 16 (0–64), `floor` 0.7, `depth` 0.3, `tint` 0.5, `tintColor` |
+
+### Seeds
+
+Every visualization takes a `seed` option, 0–9999, default 1 (a few that
+already had one keep their own default). All of its random choices come
+from a generator seeded by it, so the same song, timeline and seeds render
+the same picture twice, and changing a seed rerolls one visualization
+without touching the rest. Two instances on one seed make the same choices,
+which suits mirrored twins; give them different seeds to vary them. Level
+specs that pick at random, an unseeded `lfo` phase or a `hold`, draw from the
+same generator. A custom visualization should call `this.random()` rather
+than `Math.random()`.
 
 ### Bouncing text
 
@@ -738,6 +768,10 @@ strength, `.` or a space is empty, and any other character (`#`, `x`…) is
 full strength, so ASCII art works too. Rows may also be arrays of numbers,
 for a client that keeps a matrix. It is plain JSON like any other option, so
 a drawing saved with a timeline comes back with it.
+
+Three of the classics take a drawing too, blank by default so they look as
+they always have: `particles` gathers its motes into it, and `radial-burst`
+and `polygon-pulse` take its silhouette as their outline.
 
 `describe()` reports the option as `kind: 'grid'`, with the canvas an editor
 should offer:
@@ -1140,8 +1174,10 @@ register(Strobe);                // now usable in timeline config as 'strobe'
 
 `onFrame(frame)` is called every tick before `draw` (the base class stashes it
 on `this.frame`) — use it for raw `spectrum`/`waveform` access, which isn't
-routed. The engine handles clearing the canvas, fade in/out, and
-`resize(width, height)`. If the visualization holds anything the garbage
+routed. The engine handles clearing the canvas, fade in/out, placement, and
+`resize(width, height)`; draw to `this.width` × `this.height`, which is the
+entry's own region. Take random numbers from `this.random()`, never
+`Math.random()`, so the `seed` option works (see [Seeds](#seeds)). If the visualization holds anything the garbage
 collector can't reclaim, release it in `dispose()`, which the engine calls
 once the window has ended and faded out.
 
@@ -1153,8 +1189,11 @@ frame on the canvas — for effects that feed a frame into the next one.
 `FeedbackVisualization` ([src/visualizations/feedback-base.js](src/visualizations/feedback-base.js))
 captures it for you as `this.previous`; `infinity-mirror`, `kaleidoscope`,
 `wallpaper`, `zoom-burst` and `hue-drift` build on it. An overlay can read the
-current frame straight off `ctx.canvas` in `draw`, since everything beneath
-it has already drawn; `TreatmentVisualization`
+current frame in `draw`, since everything beneath it has already drawn, but
+should copy it with `grab(dst, ctx.canvas, this.frameView)` from frame-utils
+rather than reading `ctx.canvas` directly: that takes only the part under
+the entry's region, turned the way the region is, and still works when `ctx`
+is a blended entry's own layer. `TreatmentVisualization`
 ([src/visualizations/treatment-base.js](src/visualizations/treatment-base.js))
 copies it for you as `this.current`, and `bloom`, `reflecting-pool`,
 `spectral-slices` and `mosaic` build on that. Both bases share

@@ -264,6 +264,41 @@ export function radialProfile(glyph, { n = 72, kappa = 14, ratio = 2.6 } = {}) {
   return out;
 }
 
+/**
+ * A radial profile (above) as an outline: `outline(angle)` is the reach in
+ * that direction, 0–1, with the furthest direction at 1, interpolated
+ * between samples. For drawing a shape as the drawing's silhouette, so that
+ * at radius R it fits inside a circle of radius R.
+ */
+export function profileOutline(profile) {
+  const n = profile.length;
+  let hi = 0;
+  for (const v of profile) hi = Math.max(hi, v);
+  const scale = hi > 0 ? 1 / hi : 1;
+  const TAU = Math.PI * 2;
+  return (angle) => {
+    const t = ((((angle % TAU) + TAU) % TAU) / TAU) * n;
+    const i = Math.floor(t);
+    const f = t - i;
+    return (profile[i % n] * (1 - f) + profile[(i + 1) % n] * f) * scale;
+  };
+}
+
+/** Trace `outline` as a closed path round (cx, cy) at `radius`, turned by `turn`. */
+export function traceOutline(ctx, outline, cx, cy, radius, turn = 0, steps = 96) {
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    const r = radius * outline(a);
+    const x = cx + Math.cos(a + turn) * r;
+    const y = cy + Math.sin(a + turn) * r;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+/** An empty drawing: the default where a glyph is opt-in. */
+export const BLANK = Array.from({ length: 9 }, () => '.........');
+
 /*
  * Default drawings, one per visualization, each chosen to show what that
  * reading does with a drawing. Kept here so they are easy to compare and

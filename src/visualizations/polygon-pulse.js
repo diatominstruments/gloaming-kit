@@ -1,6 +1,7 @@
 import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
+import { glyphOption, readGlyph, radialProfile, profileOutline, BLANK } from './glyph.js';
 
 /**
  * PolygonPulse — a rotating polygon whose radius pulses with the bass and
@@ -8,6 +9,12 @@ import { TRIGGER } from '../analyzer.js';
  * rotation. `energy` — overall loudness — sets how hard all of it goes: the
  * idle spin and the depth of the pulse, so a quiet passage still pulses on
  * the beat, just gently.
+ *
+ * Draw a `glyph` and each corner sits on the drawing's silhouette (see
+ * radialProfile in glyph.js) instead of a circle, so the polygon is a
+ * faceted cut of the drawing that turns and pulses; more sides trace it more
+ * closely, so raise `minSides` for a recognisable outline. Left blank (the
+ * default), it is a regular polygon.
  */
 export class PolygonPulse extends Visualization {
   static id = 'polygon-pulse';
@@ -27,10 +34,11 @@ export class PolygonPulse extends Visualization {
   static SIZE = 0.22;       // base radius, of the smaller screen dimension
   static ECHO = 0.62;       // inner accent copy, as a fraction of the radius
   static options = {
-    minSides:  { kind: 'number', default: PolygonPulse.MIN_SIDES, min: 3, max: 12, step: 1 },
-    sideRange: { kind: 'number', default: PolygonPulse.SIDE_RANGE, min: 0, max: 12, step: 1 },
+    minSides:  { kind: 'number', default: PolygonPulse.MIN_SIDES, min: 3, max: 48, step: 1 },
+    sideRange: { kind: 'number', default: PolygonPulse.SIDE_RANGE, min: 0, max: 48, step: 1 },
     size:      { kind: 'number', default: PolygonPulse.SIZE, min: 0.05, max: 0.45, step: 0.01 },
     echo:      { kind: 'number', default: PolygonPulse.ECHO, min: 0, max: 0.95, step: 0.01 },
+    glyph:     glyphOption({ width: 9, height: 9, value: BLANK }),
   };
 
   constructor(opts) {
@@ -39,6 +47,8 @@ export class PolygonPulse extends Visualization {
     this.sideRange = this.option('sideRange');
     this.size = this.option('size');
     this.echo = this.option('echo');
+    const glyph = readGlyph(this);
+    this.outline = glyph?.count ? profileOutline(radialProfile(glyph)) : null;
     this.rotation = 0;
     this.spin = 0.3;     // rad/s, decays back to base after snare kicks
     this.punch = 0;      // extra radius from bass hits, decays fast
@@ -46,7 +56,7 @@ export class PolygonPulse extends Visualization {
 
   onInput(slot, data) {
     const strength = impact(data);
-    if (slot === 'kick') this.spin += (Math.random() < 0.5 ? -1 : 1) * (2 + strength * 4);
+    if (slot === 'kick') this.spin += (this.random() < 0.5 ? -1 : 1) * (2 + strength * 4);
     if (slot === 'punch') this.punch = Math.max(this.punch, strength);
   }
 
@@ -74,9 +84,13 @@ export class PolygonPulse extends Visualization {
       ctx.strokeStyle = color;
       ctx.beginPath();
       for (let i = 0; i <= sides; i++) {
-        const a = this.rotation + (i / sides) * Math.PI * 2;
-        const x = cx + Math.cos(a) * radius;
-        const y = cy + Math.sin(a) * radius;
+        const t = (i / sides) * Math.PI * 2;
+        const a = this.rotation + t;
+        // The silhouette turns with the polygon, so the shape stays upright
+        // relative to its own corners.
+        const reach = radius * (this.outline ? this.outline(t) : 1);
+        const x = cx + Math.cos(a) * reach;
+        const y = cy + Math.sin(a) * reach;
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.stroke();

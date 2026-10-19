@@ -117,7 +117,7 @@ export class RollingBall extends Visualization {
     // harder. The target is nudged rather than set, so back-to-back hits
     // compound into a tight curve.
     const turn = MIN_TURN + strength * (MAX_TURN - MIN_TURN);
-    this.targetHeading += (Math.random() < 0.5 ? -1 : 1) * turn;
+    this.targetHeading += (this.random() < 0.5 ? -1 : 1) * turn;
     this.kick = Math.max(this.kick, impact(data));
   }
 

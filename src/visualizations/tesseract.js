@@ -194,13 +194,13 @@ export class Tesseract extends ThreeVisualization {
     this.whip = new Float64Array(PLANES.length);
     this.kick = 0;
     this.time = 0;
-    this.hue = Math.random();
+    this.hue = this.random();
     this.camera.fov = 45;
     this.camera.near = 0.05;
     this.center = new THREE.Vector3();
     // At the close point the camera is just outside the figure's outer cell,
     // so edges stream past the lens.
-    this.swoop = new Swoop(this.options.distance, { near: 0.42, far: 2.1, period: 22 });
+    this.swoop = new Swoop(this.options.distance, { near: 0.42, far: 2.1, period: 22, random: this.random });
 
     // Scratch, so the per-frame loops never allocate.
     this.v = new Float64Array(4);
@@ -217,8 +217,8 @@ export class Tesseract extends ThreeVisualization {
     if (slot !== 'whip') return;
     const size = impact(data);
     // One of the three w-planes, either way round.
-    const plane = 3 + Math.floor(Math.random() * 3);
-    this.whip[plane] += (Math.random() < 0.5 ? -1 : 1) * size * Tesseract.WHIP;
+    const plane = 3 + Math.floor(this.random() * 3);
+    this.whip[plane] += (this.random() < 0.5 ? -1 : 1) * size * Tesseract.WHIP;
     this.kick = Math.max(this.kick, size);
   }
 

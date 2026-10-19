@@ -48,6 +48,7 @@ import { Mosaic } from './mosaic.js';
 import { CATEGORY, CATEGORIES } from './categories.js';
 import { LAYER, LAYERS } from './layers.js';
 import { UNIVERSAL } from '../placement.js';
+import { SEED_OPTION } from './base.js';
 
 export { CATEGORY, CATEGORIES, LAYER, LAYERS };
 
@@ -194,7 +195,11 @@ export function describe(vizOrId) {
     inputs: Object.entries(V.inputs ?? {}).map(([name, def]) => ({
       name, kind: def.kind, default: copy(def.default),
     })),
-    options: Object.entries(V.options ?? {}).map(([name, spec]) => describeOption(name, spec)),
+    options: [
+      ...Object.entries(V.options ?? {}).map(([name, spec]) => describeOption(name, spec)),
+      // Every visualization takes a seed; see base.js.
+      ...(V.options?.seed ? [] : [describeOption('seed', SEED_OPTION)]),
+    ],
     universal: copy(UNIVERSAL),
   };
 }

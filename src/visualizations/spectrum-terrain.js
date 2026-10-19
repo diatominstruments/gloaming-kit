@@ -89,8 +89,8 @@ export class SpectrumTerrain extends ThreeVisualization {
     this.travel = 0;      // distance since the newest row was laid, 0..ROW_LENGTH
     this.bins = new Float32Array(COLS / 2);
     this.peaks = new Float32Array(COLS / 2);   // fast attack, slow decay
-    this.noise = createNoise3D(Math.floor(Math.random() * 1e6));
-    this.hue = Math.random();
+    this.noise = createNoise3D(Math.floor(this.random() * 1e6));
+    this.hue = this.random();
     this.swayT = 0;
     this.waves = [];      // { dist, strength }
 

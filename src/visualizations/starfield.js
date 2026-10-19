@@ -9,6 +9,14 @@ import { TRIGGER } from '../analyzer.js';
  * Cruise speed is deliberately constant. Reacting to loudness made the
  * field surge and stall frame to frame, which reads as jerky rather than
  * energetic; the audio drives star size instead.
+ *
+ * Options:
+ *   count, speed   how many stars, and how fast the field flies
+ *   streak         how long each star's motion streak is, as a multiple of
+ *                  one frame's travel; 0 draws bare dots (default 1)
+ *   spread         how far the stars scatter from the line of flight; small
+ *                  is a narrow stream straight ahead, large a wide field
+ *                  that mostly flashes past the edges (default 1)
  */
 export class Starfield extends Visualization {
   static id = 'starfield';
@@ -26,19 +34,23 @@ export class Starfield extends Visualization {
   static options = {
     count: { kind: 'number', default: Starfield.COUNT, min: 50, max: 1500, step: 10 },
     speed: { kind: 'number', default: Starfield.SPEED, min: 0.1, max: 3, step: 0.05 },
+    streak: { kind: 'number', default: 1, min: 0, max: 12, step: 0.5 },
+    spread: { kind: 'number', default: 1, min: 0.1, max: 3, step: 0.05 },
   };
 
   constructor(opts) {
     super(opts);
     this.speed = this.option('speed');
-    this.stars = Array.from({ length: this.option('count') }, () => this.spawn(Math.random()));
+    this.streak = this.option('streak');
+    this.spread = this.option('spread');
+    this.stars = Array.from({ length: this.option('count') }, () => this.spawn(this.random()));
     this.sizeBoost = 0;
   }
 
   spawn(z = 1) {
     return {
-      x: (Math.random() * 2 - 1),
-      y: (Math.random() * 2 - 1),
+      x: (this.random() * 2 - 1) * this.spread,
+      y: (this.random() * 2 - 1) * this.spread,
       z,
     };
   }
@@ -78,14 +90,18 @@ export class Starfield extends Visualization {
       const size = (0.4 + depth * 2.6) * (1 + this.sizeBoost * 5.4);
       ctx.globalAlpha *= Math.min(1, 0.15 + depth * 1.1);
 
-      // Motion streak from previous position; longer when moving fast.
-      const px = cx + (s.x * focal) / prevZ;
-      const py = cy + (s.y * focal) / prevZ;
-      ctx.lineWidth = size;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(sx, sy);
-      ctx.stroke();
+      // Motion streak back toward where it was `streak` frames ago; longer
+      // the nearer and faster the star.
+      if (this.streak > 0) {
+        const tailZ = s.z + (prevZ - s.z) * this.streak;
+        const px = cx + (s.x * focal) / tailZ;
+        const py = cy + (s.y * focal) / tailZ;
+        ctx.lineWidth = size;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+      }
 
       ctx.beginPath();
       ctx.arc(sx, sy, size / 2, 0, Math.PI * 2);

@@ -12,10 +12,15 @@ import { TRIGGER } from '../analyzer.js';
  *
  *   reveal  how strongly the rosette comes through
  *   spin    how fast the sampled wedge turns
- *   shift   a hit steps the wedge count up or down one notch
+ *   shift   a hit steps the wedge count up or down by two
  *
  * Options:
- *   segments  starting wedge count, even so the mirroring closes (default 8)
+ *   segments  starting wedge count, 2–48, rounded to even so the mirroring
+ *             closes (default 8)
+ *   zoom      scale of the sampled frame; under 1 recedes into rings
+ *   originX,  where the rosette is centred, as fractions of the width and
+ *   originY   height (default 0.5, 0.5); off centre, the wedges fan out
+ *             from there and the sampled frame turns about that point
  */
 export class Kaleidoscope extends FeedbackVisualization {
   static id = 'kaleidoscope';
@@ -26,10 +31,12 @@ export class Kaleidoscope extends FeedbackVisualization {
     spin:   { kind: 'level', default: 'mid' },
     shift:  { kind: 'event', default: TRIGGER.LULL },
   };
-  static SEGMENTS = [4, 6, 8, 10, 12, 16];
+  static SEGMENTS = [2, 48];   // the range a shift walks within
   static options = {
-    segments: { kind: 'enum', values: Kaleidoscope.SEGMENTS, default: 8 },
+    segments: { kind: 'number', default: 8, min: 2, max: 48, step: 2 },
     zoom: { kind: 'number', default: 0.94, min: 0.8, max: 1.05, step: 0.005 },
+    originX: { kind: 'number', default: 0.5, min: 0, max: 1, step: 0.01 },
+    originY: { kind: 'number', default: 0.5, min: 0, max: 1, step: 0.01 },
   };
 
   static FLOOR = 0.3;         // rosette strength at silence
@@ -43,8 +50,9 @@ export class Kaleidoscope extends FeedbackVisualization {
   constructor(opts) {
     super(opts);
     this.zoom = this.option('zoom');   // under 1 recedes into rings of copies
-    const i = Kaleidoscope.SEGMENTS.indexOf(Number(this.options.segments));
-    this.index = i === -1 ? Kaleidoscope.SEGMENTS.indexOf(8) : i;
+    this.segments = this.option('segments');
+    this.originX = this.option('originX');
+    this.originY = this.option('originY');
     this.reveal = 0;
     this.spinRate = 0;
     this.angle = 0;
@@ -52,10 +60,10 @@ export class Kaleidoscope extends FeedbackVisualization {
 
   onInput(slot) {
     if (slot !== 'shift') return;
-    const last = Kaleidoscope.SEGMENTS.length - 1;
-    // A random walk that turns back at either end of the list.
-    const up = this.index === 0 || (this.index < last && Math.random() < 0.5);
-    this.index += up ? 1 : -1;
+    const [lo, hi] = Kaleidoscope.SEGMENTS;
+    // A random walk that turns back at either end of the range.
+    const up = this.segments <= lo || (this.segments < hi && this.random() < 0.5);
+    this.segments += up ? 2 : -2;
   }
 
   draw(ctx, dt) {
@@ -65,11 +73,12 @@ export class Kaleidoscope extends FeedbackVisualization {
     this.angle += dt * (K.BASE_SPIN + K.SPIN_GAIN * this.spinRate);
     if (!this.hasPrevious) return;
 
-    const n = K.SEGMENTS[this.index];
+    const n = this.segments;
     const seg = (Math.PI * 2) / n;
-    const cx = this.width / 2;
-    const cy = this.height / 2;
-    const radius = Math.hypot(cx, cy) + 2;
+    const cx = this.width * this.originX;
+    const cy = this.height * this.originY;
+    // Far enough to reach the corner furthest from the origin.
+    const radius = Math.hypot(Math.max(cx, this.width - cx), Math.max(cy, this.height - cy)) + 2;
 
     ctx.globalAlpha *= K.FLOOR + K.DEPTH * this.reveal;
     for (let i = 0; i < n; i++) {

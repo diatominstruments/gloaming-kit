@@ -1,5 +1,6 @@
 import { compileLevel } from '../signals.js';
 import { peakMix, peakAmount } from '../style.js';
+import { mulberry32 } from '../noise.js';
 
 export { approach, clamp01, impact } from '../util.js';
 
@@ -52,6 +53,12 @@ export { approach, clamp01, impact } from '../util.js';
  * in the constructor is the norm: a changed option is a new instance (the
  * timeline keys entries by their options), so nothing has to track changes.
  *
+ * Randomness: every visualization takes a `seed` option (SEED_OPTION, unless
+ * it declares its own) and draws its random numbers from `this.random()`,
+ * seeded from it, rather than Math.random — so a render can be repeated and
+ * a seed changed to reroll. Level specs that pick at random (an unseeded
+ * `lfo` phase, a `hold`) draw from it too.
+ *
  * Colour at extremes: the style carries a `peakColor` that shows only when
  * the sound peaks — a hit's `impact()` near 1, a level near 1. Draw it with
  * `this.peak(base, level)`, which pushes `base` toward it as `level` rises
@@ -89,6 +96,20 @@ export { approach, clamp01, impact } from '../util.js';
  * `static triggers = [...]` with `onTrigger(name, data)` still works for
  * visualizations that don't declare slots, but it can't be rerouted.
  */
+/**
+ * The `seed` every visualization accepts, whether or not it declares one:
+ * which of its random choices it makes. A class may declare its own `seed`
+ * option (with a different default, say) and that wins.
+ */
+export const SEED_OPTION = { kind: 'number', default: 1, min: 0, max: 9999, step: 1 };
+
+/** A string's FNV-1a hash, so two classes on one seed don't share a stream. */
+const hash = (str) => {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+
 export class Visualization {
   static triggers = [];
   static inputs = {};
@@ -100,6 +121,10 @@ export class Visualization {
     this.style = style;
     this.options = options ?? {};
     this.frame = null; // latest analyzer frame, kept by default onFrame
+    // Every random choice goes through this, never Math.random, so the same
+    // seed, song and timeline render the same picture twice, and changing
+    // `seed` is a reroll.
+    this.random = mulberry32(hash(this.constructor.id ?? '') ^ Math.imul(this.option('seed') + 1, 0x9e3779b1));
     // Set by the engine: where this instance sits on the engine's canvas, for
     // the few visualizations that copy the frame itself (see grab() in
     // frame-utils.js). Null draws as if the canvas were all there is.
@@ -112,7 +137,7 @@ export class Visualization {
     for (const [slot, def] of Object.entries(this.constructor.inputs)) {
       if (def.kind !== 'level') continue;
       const spec = bind && bind[slot] !== undefined ? bind[slot] : def.default;
-      this.signals.push([slot, compileLevel(spec, `${this.constructor.id}.${slot}`)]);
+      this.signals.push([slot, compileLevel(spec, `${this.constructor.id}.${slot}`, this.random)]);
       this.levels[slot] = 0;
     }
   }
@@ -140,7 +165,7 @@ export class Visualization {
    * `values`; strings are cut to `maxLength`. Undeclared names read as given.
    */
   option(name) {
-    const spec = this.constructor.options?.[name];
+    const spec = this.constructor.options?.[name] ?? (name === 'seed' ? SEED_OPTION : undefined);
     const value = this.options[name];
     if (!spec) return value;
     if (Array.isArray(spec)) return spec.includes(value) ? value : spec[0];

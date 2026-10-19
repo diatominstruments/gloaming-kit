@@ -33,6 +33,7 @@ export class Thomas extends FlowAttractor {
   static category = CATEGORY.ATTRACTORS;
 
   static PARAMS = [0.18, 1.0];       // [b damping, ω lattice frequency]
+  static PARAM_NAMES = ['b', 'omega'];
   static DRIFT = [0.05, 0.09];       // b ∈ [0.13, 0.23], ω ∈ [0.91, 1.09]
   static JOLT = [0.025, 0.04];       // hits widen those to [0.105, 0.255], [0.87, 1.13]
   static SCALE = 0.1;

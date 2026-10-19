@@ -200,7 +200,7 @@ export class Nebula extends ThreeVisualization {
 
     const count = this.option('count');
     this.swirlRate = this.option('swirl');
-    const rand = mulberry32(Math.floor(Math.random() * 1e9));
+    const rand = mulberry32(Math.floor(this.random() * 1e9));
     const g = {
       rand,
       // Box–Muller; good enough for scattering motes.
@@ -257,7 +257,7 @@ export class Nebula extends ThreeVisualization {
     this.swirl = 0;
     this.orbit = rand() * Math.PI * 2;
     // Down to 0.35 × 2 radii: over the disc, inside the outer arms.
-    this.swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.3, period: 28 });
+    this.swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.3, period: 28, random: this.random });
     this.hue = rand();
     this.shocks = [];   // { radius, strength }
     this.camera.fov = 60;

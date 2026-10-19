@@ -42,7 +42,7 @@ const DISTANCES = { near: 0.6, med: 1, far: 1.6 };
  * heading, so the object sweeps across the frame rather than staying pinned
  * to the centre while the background spins behind it.
  *
- *   const swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.4 });
+ *   const swoop = new Swoop(this.options.distance, { near: 0.35, far: 2.4, random: this.random });
  *   swoop.update(dt, rate);   // rate: radians/s round the object when circling
  *   swoop.scale      // distance, as a multiple of the visualization's own
  *   swoop.angle      // heading round the object
@@ -54,7 +54,7 @@ export class Swoop {
    * `near` and `far` are the orbit's closest and farthest distance, as
    * multiples of the visualization's own; `period` is seconds per loop.
    */
-  constructor(mode, { near = 0.35, far = 2.4, period = 26 } = {}) {
+  constructor(mode, { near = 0.35, far = 2.4, period = 26, random = Math.random } = {}) {
     if (mode !== undefined && !DISTANCE_OPTION.values.includes(mode)) {
       console.warn(`GloamingKit: distance '${mode}'; expected ${DISTANCE_OPTION.values.join('|')}`);
     }
@@ -68,8 +68,8 @@ export class Swoop {
     // Eccentric anomaly: 0 at the closest point. Start on the way in, so the
     // first pass comes early.
     this.E = -2.2;
-    this.axis = Math.random() * Math.PI * 2;    // heading of the ellipse's axis
-    this.angle = Math.random() * Math.PI * 2;
+    this.axis = random() * Math.PI * 2;    // heading of the ellipse's axis
+    this.angle = random() * Math.PI * 2;
     this.scale = DISTANCES[this.mode] ?? 1;
     this.close = 0;
     this.last = null;                           // camera position last frame

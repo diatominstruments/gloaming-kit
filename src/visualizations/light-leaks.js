@@ -59,15 +59,15 @@ export class LightLeaks extends Visualization {
     const [lo, hi] = LightLeaks.DISC_R;
     const leaks = this.option('leaks');
     this.discs = Array.from({ length: this.option('discs') }, (_, i) => ({
-      u: Math.random(),
-      v: Math.random(),
-      r: lo + Math.random() * (hi - lo),
+      u: this.random(),
+      v: this.random(),
+      r: lo + this.random() * (hi - lo),
       accent: i % 2 === 1,
       flash: 0,
     }));
     // Leaks sit at a position along the screen's perimeter, 0..1.
     this.leaks = Array.from({ length: leaks }, (_, i) => ({
-      at: i / leaks + Math.random() * 0.2,
+      at: i / leaks + this.random() * 0.2,
       dir: i % 2 ? 1 : -1,
     }));
     this.t = 0;
@@ -81,7 +81,7 @@ export class LightLeaks extends Visualization {
     const k = impact(data);
     this.flare = Math.max(this.flare, k);
     for (let i = 0; i < LightLeaks.BLOOM_COUNT; i++) {
-      const d = this.discs[(Math.random() * this.discs.length) | 0];
+      const d = this.discs[(this.random() * this.discs.length) | 0];
       if (d) d.flash = Math.max(d.flash, k);
     }
   }

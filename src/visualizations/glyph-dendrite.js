@@ -198,7 +198,7 @@ export class GlyphDendrite extends ThreeVisualization {
     this.camera.far = 400;
     this.camera.updateProjectionMatrix();
     this.center = new THREE.Vector3(0, this.from === 'ground' ? -0.45 * R : 0, 0);
-    this.swoop = new Swoop(this.options.distance, { near: 0.45, far: 1.5, period: 32 });
+    this.swoop = new Swoop(this.options.distance, { near: 0.45, far: 1.5, period: 32, random: this.random });
   }
 
   /** One rule per row: the children a branch splits into at that generation. */

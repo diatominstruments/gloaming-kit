@@ -44,8 +44,7 @@ import { mulberry32 } from './noise.js';
  *                                          song time; shape 'sine', 'triangle',
  *                                          'saw' or 'square'. Its phase comes
  *                                          from `phase` (0..1), else `seed`,
- *                                          else chance, so no two runs match
- *                                          unless asked to
+ *                                          else the visualization's own seed
  *   { progress: true }                     song position, 0 at the start to 1
  *                                          at the end (0 for a live source)
  *   { hold: 'snare', pick: 'random' }      sample-and-hold: each hit of the
@@ -107,12 +106,12 @@ const envelope = (name, decay) => {
   };
 };
 
-const combine = (specs, path, reducer, seed) => {
+const combine = (specs, path, reducer, seed, random) => {
   if (!Array.isArray(specs)) {
     warn(path, 'expected a list of specs to combine');
     return constant(0);
   }
-  const parts = specs.map((s, i) => compileLevel(s, `${path}[${i}]`));
+  const parts = specs.map((s, i) => compileLevel(s, `${path}[${i}]`, random));
   if (!parts.length) return constant(0);
   return (frame, dt, events) => {
     let acc = seed;
@@ -128,14 +127,17 @@ const SHAPES = {
   square: (x) => (x < 0.5 ? 0 : 1),
 };
 
-/** A random source: seeded when the spec gives a seed, else Math.random. */
-const rngOf = (seed) => (Number.isFinite(seed) ? mulberry32(seed) : Math.random);
+/**
+ * A random source: seeded when the spec gives a seed, else the caller's
+ * (a visualization passes its own seeded one), else Math.random.
+ */
+const rngOf = (seed, random = Math.random) => (Number.isFinite(seed) ? mulberry32(seed) : random);
 
 /**
  * Oscillator on song time, so it is where it should be after a seek and
  * holds still while paused.
  */
-const lfo = (spec, path) => {
+const lfo = (spec, path, random) => {
   const rate = Number(spec.lfo);
   if (!Number.isFinite(rate) || rate < 0) {
     warn(path, `lfo rate must be a number of Hz, got ${JSON.stringify(spec.lfo)}`);
@@ -146,7 +148,7 @@ const lfo = (spec, path) => {
     warn(path, `unknown lfo shape '${spec.shape}' — expected one of ${Object.keys(SHAPES).join(', ')}`);
     wave = SHAPES.sine;
   }
-  const phase = Number.isFinite(spec.phase) ? spec.phase : rngOf(spec.seed)();
+  const phase = Number.isFinite(spec.phase) ? spec.phase : rngOf(spec.seed, random)();
   return (frame) => {
     const x = (frame?.time ?? 0) * rate + phase;
     return wave(x - Math.floor(x));
@@ -161,16 +163,16 @@ const progress = () => (frame) => {
 const PICKS = ['random', 'impact', 'cycle', 'toggle'];
 
 /** Sample-and-hold on a trigger; see the header for `pick`. */
-const hold = (spec, path) => {
+const hold = (spec, path, random) => {
   const name = spec.hold;
   if (typeof name !== 'string') {
     warn(path, 'hold takes a trigger name');
     return constant(0);
   }
   const pick = spec.pick ?? 'random';
-  const rng = rngOf(spec.seed);
+  const rng = rngOf(spec.seed, random);
   const steps = Math.max(2, Math.round(spec.steps ?? 4));
-  const sampled = PICKS.includes(pick) ? null : compileLevel(pick, `${path}.pick`);
+  const sampled = PICKS.includes(pick) ? null : compileLevel(pick, `${path}.pick`, random);
   let count = 0;
   let held = Number.isFinite(spec.initial) ? spec.initial : null;
 
@@ -196,7 +198,7 @@ const hold = (spec, path) => {
 };
 
 /** Compile a level spec into a signal. Never throws; warns and yields 0. */
-export function compileLevel(spec, path = 'input') {
+export function compileLevel(spec, path = 'input', random = Math.random) {
   let signal;
 
   if (spec == null) {
@@ -206,7 +208,7 @@ export function compileLevel(spec, path = 'input') {
   } else if (typeof spec === 'string') {
     signal = spec === 'rms' ? rms() : band(spec, path);
   } else if (Array.isArray(spec)) {
-    return combine(spec, path, (a, b) => a + b, 0);
+    return combine(spec, path, (a, b) => a + b, 0, random);
   } else if (typeof spec === 'object') {
     if (spec.band !== undefined) {
       signal = band(spec.band, path);
@@ -219,19 +221,19 @@ export function compileLevel(spec, path = 'input') {
     } else if (spec.const !== undefined) {
       signal = constant(spec.const);
     } else if (spec.sum !== undefined) {
-      signal = combine(spec.sum, path, (a, b) => a + b, 0);
+      signal = combine(spec.sum, path, (a, b) => a + b, 0, random);
     } else if (spec.max !== undefined) {
-      signal = combine(spec.max, path, Math.max, 0);
+      signal = combine(spec.max, path, Math.max, 0, random);
     } else if (spec.min !== undefined) {
-      signal = combine(spec.min, path, Math.min, Infinity);
+      signal = combine(spec.min, path, Math.min, Infinity, random);
     } else if (spec.mul !== undefined) {
-      signal = combine(spec.mul, path, (a, b) => a * b, 1);
+      signal = combine(spec.mul, path, (a, b) => a * b, 1, random);
     } else if (spec.lfo !== undefined) {
-      signal = lfo(spec, path);
+      signal = lfo(spec, path, random);
     } else if (spec.progress) {
       signal = progress();
     } else if (spec.hold !== undefined) {
-      signal = hold(spec, path);
+      signal = hold(spec, path, random);
     } else {
       warn(path, 'no source in spec (expected band, relative, intensity, trigger, const, sum, max, min, mul, lfo, progress or hold)');
       signal = constant(0);

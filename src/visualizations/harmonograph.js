@@ -13,6 +13,19 @@ import { TRIGGER } from '../analyzer.js';
  * on the next quiet one, because the offset is absolute rather than
  * accumulated. Here mid energy sets a signed twist *rate*, so the figure
  * winds, slows, and unwinds continuously.
+ *
+ * Options:
+ *   ratios     the intervals a snap picks between, as text: comma-separated,
+ *              each two to four whole numbers joined by colons, one per
+ *              pendulum — '1:2,2:3,3:4,3:5,4:5,5:6' (default), '1:1,1:3:5'.
+ *              Unreadable entries are skipped
+ *   pendulums  2–4 (default 2). Two swing x and y, the classic figure. A
+ *              third turns in a circle under them, as a harmonograph's
+ *              rotary table does, and a fourth swings across both axes on
+ *              the diagonal. A pendulum the current ratio gives no number
+ *              to takes the sum of the first two (the third) or their
+ *              difference (the fourth)
+ *   damping, loops   how fast the swing dies along the curve, and its length
  */
 export class Harmonograph extends Visualization {
   static id = 'harmonograph';
@@ -40,41 +53,64 @@ export class Harmonograph extends Visualization {
   static LOOPS = 5;            // curve length, in half-turns of the slower axis
 
   static options = {
-    damping: { kind: 'number', default: Harmonograph.DAMPING, min: 0, max: 0.5, step: 0.01 },
-    loops:   { kind: 'number', default: Harmonograph.LOOPS, min: 2, max: 12, step: 0.5 },
+    ratios:    { kind: 'string', default: Harmonograph.RATIOS.map((r) => r.join(':')).join(','), maxLength: 120 },
+    pendulums: { kind: 'number', default: 2, min: 2, max: 4, step: 1 },
+    damping:   { kind: 'number', default: Harmonograph.DAMPING, min: 0, max: 0.5, step: 0.01 },
+    loops:     { kind: 'number', default: Harmonograph.LOOPS, min: 2, max: 12, step: 0.5 },
   };
+
+  /**
+   * '1:2,2:3:5' → [[1, 2, 3, 1], [2, 3, 5, 1]]: every ratio as four
+   * frequencies, the missing third and fourth filled in as the sum and the
+   * difference of the first two (a difference of 0 becomes the first).
+   */
+  static parseRatios(text) {
+    const out = [];
+    for (const entry of String(text).split(',')) {
+      const nums = entry.split(':').map((s) => Number(s.trim()));
+      if (nums.length < 2 || nums.length > 4 || !nums.every((n) => Number.isFinite(n) && n > 0)) continue;
+      const [p, q] = nums;
+      out.push([p, q, nums[2] ?? p + q, nums[3] ?? (Math.abs(q - p) || p)]);
+    }
+    return out;
+  }
 
   constructor(opts) {
     super(opts);
     this.damping = this.option('damping');
     this.loops = this.option('loops');
+    this.pendulums = this.option('pendulums');
+    this.ratios = Harmonograph.parseRatios(this.option('ratios'));
+    if (!this.ratios.length) {
+      console.warn(`GloamingKit: harmonograph couldn't read ratios '${this.options.ratios}'; using the defaults`);
+      this.ratios = Harmonograph.parseRatios(Harmonograph.options.ratios.default);
+    }
     this.phase = 0;
     this.twist = Harmonograph.BASE_TWIST;
     this.midFast = 0;          // mid, denoised
     this.midSlow = 0;          // mid, slow average it gets compared against
-    this.ratioIndex = 1;
+    this.ratioIndex = Math.min(1, this.ratios.length - 1);
     this.morph = 1;            // 0→1 blend into the current ratio after a snap
-    this.prevRatio = Harmonograph.RATIOS[0];
+    this.prevRatio = this.ratios[0];
     this.swell = 0;
     this.rotation = 0;
   }
 
   onInput(slot, data) {
-    if (slot === 'snap') {
+    if (slot === 'snap' && this.ratios.length > 1) {
+      const n = this.ratios.length;
       this.prevRatio = this.currentRatio();
-      this.ratioIndex = (this.ratioIndex + 1 + Math.floor(Math.random() * (Harmonograph.RATIOS.length - 1))) % Harmonograph.RATIOS.length;
+      this.ratioIndex = (this.ratioIndex + 1 + Math.floor(this.random() * (n - 1))) % n;
       this.morph = 0;
     }
     if (slot === 'swell') this.swell = Math.max(this.swell, impact(data));
   }
 
+  /** The four pendulum frequencies, eased from the last ratio to this one. */
   currentRatio() {
-    const [p, q] = Harmonograph.RATIOS[this.ratioIndex];
+    const to = this.ratios[this.ratioIndex];
     const m = 1 - Math.pow(1 - this.morph, 3); // ease out
-    return [
-      this.prevRatio[0] + (p - this.prevRatio[0]) * m,
-      this.prevRatio[1] + (q - this.prevRatio[1]) * m,
-    ];
+    return to.map((f, i) => this.prevRatio[i] + (f - this.prevRatio[i]) * m);
   }
 
   draw(ctx, dt) {
@@ -99,8 +135,10 @@ export class Harmonograph extends Visualization {
     this.twist = approach(this.twist, targetTwist, TWIST_TAU, dt);
     this.phase += this.twist * dt;
 
-    const [p, q] = this.currentRatio();
-    const { damping } = this;
+    const [p, q, r, s] = this.currentRatio();
+    const { damping, pendulums } = this;
+    // Extra pendulums share the swing, so the figure keeps its size.
+    const norm = 1 / (1 + (pendulums >= 3 ? 0.5 : 0) + (pendulums >= 4 ? 0.35 : 0));
     const length = Math.PI * this.loops;
     const cx = this.width / 2;
     const cy = this.height / 2;
@@ -115,8 +153,20 @@ export class Harmonograph extends Visualization {
     for (let i = 0; i <= STEPS; i++) {
       const tau = (i / STEPS) * length;
       const decay = Math.exp(-damping * tau);
-      const x = Math.sin(p * tau + this.phase) * decay;
-      const y = Math.sin(q * tau) * decay;
+      let x = Math.sin(p * tau + this.phase);
+      let y = Math.sin(q * tau);
+      if (pendulums >= 3) {
+        // The rotary table: a circle, so it winds the figure round.
+        x += 0.5 * Math.cos(r * tau);
+        y += 0.5 * Math.sin(r * tau);
+      }
+      if (pendulums >= 4) {
+        const d = 0.35 * Math.sin(s * tau + this.phase * 0.5) * Math.SQRT1_2;
+        x += d;
+        y += d;
+      }
+      x *= decay * norm;
+      y *= decay * norm;
       const sx = cx + (x * cos - y * sin) * A;
       const sy = cy + (x * sin + y * cos) * A;
       i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);

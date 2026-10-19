@@ -2,7 +2,6 @@ import { Visualization, approach, clamp01, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { LAYER } from './layers.js';
 import { TRIGGER } from '../analyzer.js';
-import { mulberry32 } from '../noise.js';
 import { parseColor } from '../style.js';
 import { glyphOption, readGlyph, OCTAGON } from './glyph.js';
 
@@ -87,7 +86,7 @@ export class GlyphCymatics extends Visualization {
     this.scale = this.option('scale');
     this.nodeWidth = this.option('nodeWidth');   // how wide the bright nodal lines are
     this.terraces = this.option('terraces');
-    this.rand = mulberry32(((Date.now() % 100000) + 5) | 0);
+    this.rand = this.random;
     this.waves = this.readWaves();
     this.theta = this.rand() * Math.PI * 2;
     this.glow = 0;

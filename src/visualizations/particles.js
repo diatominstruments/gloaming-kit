@@ -1,6 +1,7 @@
 import { Visualization, impact } from './base.js';
 import { CATEGORY } from './categories.js';
 import { TRIGGER } from '../analyzer.js';
+import { glyphOption, readGlyph, BLANK } from './glyph.js';
 
 /**
  * ParticleField — a field of motes the music shoves around. Hits (onsets by
@@ -25,6 +26,12 @@ import { TRIGGER } from '../analyzer.js';
  * burst of radiating lines that settles back into still dots. A dot that moves
  * and returns within a few frames reads as almost nothing; the streak is what
  * makes the hit legible.
+ *
+ * Draw a `glyph` and the motes' homes are scattered over the drawing
+ * instead of the whole screen, denser where it is stronger, so the field
+ * holds the drawing's shape: each home wanders only within its own cell,
+ * and a hit blows the shape apart before it springs back together. Left
+ * blank (the default), homes drift across the whole screen.
  */
 export class ParticleField extends Visualization {
   static id = 'particles';
@@ -66,31 +73,94 @@ export class ParticleField extends Visualization {
     count: { kind: 'number', default: ParticleField.COUNT, min: 20, max: 600, step: 10 },
     size:  { kind: 'number', default: 1, min: 0.3, max: 4, step: 0.1 },
     trail: { kind: 'number', default: ParticleField.TRAIL, min: 0, max: 0.3, step: 0.01 },
+    glyph: glyphOption({ width: 9, height: 9, value: BLANK }),
   };
+
+  static FIT = 0.8;          // with a glyph: the drawing's share of the short edge
+  static SHOVE_SIZE = 560;   // with a glyph: drawing size (px) that takes the full
+                             // shove; smaller drawings are shoved proportionally
+                             // less, so the shape stays legible between hits
 
   constructor(opts) {
     super(opts);
     this.size = this.option('size');
     this.trail = this.option('trail');
+    const glyph = readGlyph(this);
+    this.cells = glyph?.count ? glyph.filled() : null;
+    if (this.cells) {
+      this.glyphSize = [glyph.width, glyph.height];
+      this.cellWeight = this.cells.reduce((sum, c) => sum + c.weight, 0);
+    }
     this.particles = Array.from({ length: this.option('count') }, () => this.spawn());
+    this.layout();
+  }
+
+  resize(width, height) {
+    super.resize(width, height);
+    this.layout();
+  }
+
+  /**
+   * With a glyph, where each mote's anchor sits on screen: the drawing
+   * fitted to the centre of the canvas, cell by cell. Anchors are kept in
+   * cell units, so a resize just maps them again.
+   */
+  layout() {
+    if (!this.cells) return;
+    const [gw, gh] = this.glyphSize;
+    this.cell = (Math.min(this.width, this.height) * ParticleField.FIT) / Math.max(gw, gh);
+    this.shoveScale = Math.min(1, (this.cell * Math.max(gw, gh)) / ParticleField.SHOVE_SIZE);
+    this.ox = (this.width - gw * this.cell) / 2;
+    this.oy = (this.height - gh * this.cell) / 2;
+    for (const p of this.particles) {
+      p.hx = this.ox + (p.gu + p.wu) * this.cell;
+      p.hy = this.oy + (p.gv + p.wv) * this.cell;
+      // The first time, start each mote at home rather than flying in.
+      if (!this.placed) {
+        p.x = p.ax = p.hx;
+        p.y = p.ay = p.hy;
+      }
+    }
+    this.placed = true;
+  }
+
+  /** A point in the drawing, in cell units, denser in stronger cells. */
+  pickGlyphPoint() {
+    let pick = this.random() * this.cellWeight;
+    let cell = this.cells[this.cells.length - 1];
+    for (const c of this.cells) {
+      pick -= c.weight;
+      if (pick <= 0) { cell = c; break; }
+    }
+    // Softly spread round the cell's centre, so cells don't read as squares.
+    const jitter = () => (this.random() + this.random() - 1) * 0.6;
+    return [cell.x + 0.5 + jitter(), cell.y + 0.5 + jitter()];
   }
 
   spawn() {
     const { DRIFT } = ParticleField;
-    const x = Math.random() * this.width;
-    const y = Math.random() * this.height;
+    let x = this.random() * this.width;
+    let y = this.random() * this.height;
+    let gu = 0;
+    let gv = 0;
+    if (this.cells) {
+      // Placed on screen by layout(), which runs once they all exist.
+      [gu, gv] = this.pickGlyphPoint();
+    }
     return {
+      gu, gv,              // with a glyph: the anchor, in cell units
+      wu: 0, wv: 0,        // with a glyph: the home's wander from it, in cells
       x, y,                // live position
       hx: x, hy: y,        // home: where it drifts, and springs back to
-      hvx: (Math.random() - 0.5) * DRIFT * 2,
-      hvy: (Math.random() - 0.5) * DRIFT * 2,
+      hvx: (this.random() - 0.5) * DRIFT * 2,
+      hvy: (this.random() - 0.5) * DRIFT * 2,
       vx: 0, vy: 0,
-      size: (1 + Math.random() * 2.5) * this.size,
-      phase: Math.random() * Math.PI * 2,
+      size: (1 + this.random() * 2.5) * this.size,
+      phase: this.random() * Math.PI * 2,
       // Per-mote gain and swirl direction, so a hit scatters the field
       // unevenly instead of moving it as one rigid shell.
-      respond: 0.55 + Math.random() * 0.9,
-      swirl: Math.random() < 0.5 ? -1 : 1,
+      respond: 0.55 + this.random() * 0.9,
+      swirl: this.random() < 0.5 ? -1 : 1,
       ax: x, ay: y, alpha: 0, lw: 1,   // streak tail + per-mote draw state
     };
   }
@@ -106,7 +176,7 @@ export class ParticleField extends Visualization {
       const dx = p.x - cx;
       const dy = p.y - cy;
       const d = Math.hypot(dx, dy) || 1;
-      const kick = SHOVE * (0.3 + strength * 0.7) * p.respond;
+      const kick = SHOVE * (0.3 + strength * 0.7) * p.respond * (this.shoveScale ?? 1);
       // Radial, plus a tangential component (the perpendicular of the radial
       // unit vector) to give the burst some rotation.
       p.vx += ((dx / d) + (-dy / d) * SWIRL * p.swirl) * kick;
@@ -132,14 +202,27 @@ export class ParticleField extends Visualization {
     const glow = new Path2D();
 
     for (const p of this.particles) {
-      // Home drifts and bounces off the edges. Bouncing rather than wrapping:
-      // a wrap would teleport the anchor and snap the mote across the screen.
-      p.hx += p.hvx * dt;
-      p.hy += p.hvy * dt;
-      if (p.hx < 0) { p.hx = 0; p.hvx = Math.abs(p.hvx); }
-      else if (p.hx > w) { p.hx = w; p.hvx = -Math.abs(p.hvx); }
-      if (p.hy < 0) { p.hy = 0; p.hvy = Math.abs(p.hvy); }
-      else if (p.hy > h) { p.hy = h; p.hvy = -Math.abs(p.hvy); }
+      if (this.cells) {
+        // Home wanders within its own cell of the drawing, bouncing at the
+        // cell's edge, so the field keeps the drawing's shape.
+        const WANDER = 0.6;
+        p.wu += (p.hvx * dt) / this.cell;
+        p.wv += (p.hvy * dt) / this.cell;
+        if (Math.abs(p.wu) > WANDER) { p.wu = Math.sign(p.wu) * WANDER; p.hvx = -p.hvx; }
+        if (Math.abs(p.wv) > WANDER) { p.wv = Math.sign(p.wv) * WANDER; p.hvy = -p.hvy; }
+        p.hx = this.ox + (p.gu + p.wu) * this.cell;
+        p.hy = this.oy + (p.gv + p.wv) * this.cell;
+      } else {
+        // Home drifts and bounces off the edges. Bouncing rather than
+        // wrapping: a wrap would teleport the anchor and snap the mote
+        // across the screen.
+        p.hx += p.hvx * dt;
+        p.hy += p.hvy * dt;
+        if (p.hx < 0) { p.hx = 0; p.hvx = Math.abs(p.hvx); }
+        else if (p.hx > w) { p.hx = w; p.hvx = -Math.abs(p.hvx); }
+        if (p.hy < 0) { p.hy = 0; p.hvy = Math.abs(p.hvy); }
+        else if (p.hy > h) { p.hy = h; p.hvy = -Math.abs(p.hvy); }
+      }
 
       let ch = p.x - p.hx;
       let tmp = (p.vx + OMEGA * ch) * dt;

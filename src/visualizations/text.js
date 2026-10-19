@@ -69,9 +69,9 @@ export class BouncingText extends Visualization {
     this.speed = BouncingText.BASE_SPEED;
 
     // Normalized position (0..1 of the free area) so a resize keeps it in frame.
-    this.u = Math.random();
-    this.v = Math.random();
-    const heading = Math.random() * Math.PI * 2;
+    this.u = this.random();
+    this.v = this.random();
+    const heading = this.random() * Math.PI * 2;
     this.dx = Math.cos(heading);
     this.dy = Math.sin(heading);
   }
@@ -82,8 +82,8 @@ export class BouncingText extends Visualization {
 
   turn() {
     const { MIN_TURN, MAX_TURN } = BouncingText;
-    const angle = (Math.random() < 0.5 ? -1 : 1)
-      * (MIN_TURN + Math.random() * (MAX_TURN - MIN_TURN));
+    const angle = (this.random() < 0.5 ? -1 : 1)
+      * (MIN_TURN + this.random() * (MAX_TURN - MIN_TURN));
     const c = Math.cos(angle);
     const s = Math.sin(angle);
     [this.dx, this.dy] = [this.dx * c - this.dy * s, this.dx * s + this.dy * c];

@@ -119,7 +119,7 @@ export class SpectralSlices extends TreatmentVisualization {
     const hit = impact(data);
     this.flash = Math.max(this.flash, hit);
     for (let i = 0; i < this.n; i++) {
-      this.jolts[i] += (Math.random() * 2 - 1) * hit * this.joltGain;
+      this.jolts[i] += (this.random() * 2 - 1) * hit * this.joltGain;
     }
   }
 

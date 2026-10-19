@@ -428,7 +428,7 @@ export class GloamingKit extends Emitter {
     entry.opacityKey = key;
     const constant = o == null || typeof o === 'number';
     entry.opacityTarget = typeof o === 'number' ? clamp01(o) : 1;
-    entry.opacitySignal = constant ? null : compileLevel(o, `${spec.id}.opacity`);
+    entry.opacitySignal = constant ? null : compileLevel(o, `${spec.id}.opacity`, entry.viz.random);
     entry.opacityValue ??= entry.opacityTarget;
     if (!constant) {
       for (const name of referencedTriggers(o)) {

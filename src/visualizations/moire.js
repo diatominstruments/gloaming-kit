@@ -59,7 +59,7 @@ export class Moire extends Visualization {
     this.alpha = this.option('alpha');
     this.shift = 0;
     this.turnRate = 0;
-    this.angle = Math.random() * Math.PI * 2;
+    this.angle = this.random() * Math.PI * 2;
     this.kick = 0;
   }
 

@@ -114,7 +114,7 @@ export class ZoomBurst extends FeedbackVisualization {
     const hit = impact(data);
     this.flash = Math.max(this.flash, hit);
     const r = this.kick * hit;
-    const a = Math.random() * Math.PI * 2;
+    const a = this.random() * Math.PI * 2;
     this.thrown = { x: r * Math.cos(a), y: r * Math.sin(a) };
     if (this.direction === 'flip') this.dir = -this.dir;
   }

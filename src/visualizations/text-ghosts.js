@@ -72,11 +72,11 @@ export class TextGhosts extends Visualization {
     const [lo, hi] = TextGhosts.SIZE_SPREAD;
     // Normalized positions, so a resize keeps the layout.
     this.ghosts = Array.from({ length: count }, () => ({
-      u: Math.random(),
-      v: Math.random(),
-      size: lo + Math.random() * (hi - lo),
-      outline: Math.random() < 0.4,
-      tilt: (Math.random() - 0.5) * 0.3,
+      u: this.random(),
+      v: this.random(),
+      size: lo + this.random() * (hi - lo),
+      outline: this.random() < 0.4,
+      tilt: (this.random() - 0.5) * 0.3,
     }));
     this.stamps = [];
     this.recycle = 0;          // next ghost a faded stamp replaces
@@ -89,9 +89,9 @@ export class TextGhosts extends Visualization {
     if (slot !== 'stamp') return;
     if (this.stamps.length >= TextGhosts.MAX_STAMPS) this.settle(this.stamps.shift());
     this.stamps.push({
-      u: 0.1 + Math.random() * 0.8,
-      v: 0.1 + Math.random() * 0.8,
-      tilt: (Math.random() - 0.5) * 0.25,
+      u: 0.1 + this.random() * 0.8,
+      v: 0.1 + this.random() * 0.8,
+      tilt: (this.random() - 0.5) * 0.25,
       strength: Math.max(0.35, impact(data)),
       life: 1,
     });

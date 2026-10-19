@@ -38,7 +38,7 @@ import { TRIGGER } from '../analyzer.js';
  * `roughness` below 0.5 smooths the result while above it keeps the small
  * kinks sharp relative to the large ones.
  */
-const subdivide = (pts, displace, passes, roughness) => {
+const subdivide = (pts, displace, passes, roughness, random) => {
   for (let p = 0; p < passes; p++) {
     const next = [pts[0]];
     for (let i = 1; i < pts.length; i++) {
@@ -47,7 +47,7 @@ const subdivide = (pts, displace, passes, roughness) => {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const len = Math.hypot(dx, dy) || 1;
-      const off = (Math.random() * 2 - 1) * displace;
+      const off = (random() * 2 - 1) * displace;
       next.push({ x: (a.x + b.x) / 2 - (dy / len) * off, y: (a.y + b.y) / 2 + (dx / len) * off });
       next.push(b);
     }
@@ -166,6 +166,7 @@ export class Lightning extends Visualization {
         length * jag,
         tier === 0 ? PASSES : PASSES - 2,
         ROUGHNESS,
+        this.random,
       );
 
       let dist = startDist;
@@ -182,14 +183,14 @@ export class Lightning extends Visualization {
       // travel so a branch leaves at a corner rather than peeling off a curve.
       const chance = tier === 0 ? forkChance : forkChance * 0.4;
       for (let i = 1; i < pts.length - 1; i++) {
-        if (Math.random() >= chance) continue;
+        if (this.random() >= chance) continue;
         const local = Math.atan2(pts[i + 1].y - pts[i - 1].y, pts[i + 1].x - pts[i - 1].x);
-        const off = (Math.random() < 0.5 ? -1 : 1) * (0.45 + Math.random() * 0.75);
-        emit(pts[i].x, pts[i].y, local + off, length * (0.25 + Math.random() * 0.25), tier + 1, pts[i].dist);
+        const off = (this.random() < 0.5 ? -1 : 1) * (0.45 + this.random() * 0.75);
+        emit(pts[i].x, pts[i].y, local + off, length * (0.25 + this.random() * 0.25), tier + 1, pts[i].dist);
       }
     };
 
-    emit(w * (0.12 + Math.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
+    emit(w * (0.12 + this.random() * 0.76), -h * 0.03, Math.PI / 2, h * reach * 1.05, 0, 0);
 
     this.bolts.push({ byTier, maxDist, progress: 0, life: 1, strength });
     if (this.bolts.length > MAX_BOLTS) this.bolts.shift();
