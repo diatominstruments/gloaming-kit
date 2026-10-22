@@ -28,6 +28,7 @@ import { GlyphCrystal } from './glyph-crystal.js';
 import { GlyphDendrite } from './glyph-dendrite.js';
 import { GlyphReaction } from './glyph-reaction.js';
 import { GlyphCymatics } from './glyph-cymatics.js';
+import { GlyphTunnel } from './glyph-tunnel.js';
 import { Harmonograph } from './harmonograph.js';
 import { BouncingText } from './text.js';
 import { PerlinGlow } from './perlin-glow.js';
@@ -61,7 +62,7 @@ export const registry = new Map(
     DeJong, Clifford, Bedhead, Thomas, Aizawa, Rossler, Halvorsen,
     Thomas3D, Aizawa3D, Rossler3D, Halvorsen3D, DeJong3D, Clifford3D, Bedhead3D,
     FractalCathedral, SpectrumTerrain, Nebula, HelixCorridor, Tesseract,
-    GlyphCurrent, GlyphCrystal, GlyphDendrite, GlyphReaction, GlyphCymatics,
+    GlyphCurrent, GlyphCrystal, GlyphDendrite, GlyphReaction, GlyphCymatics, GlyphTunnel,
     PerlinGlow, InfinityMirror, Kaleidoscope, Wallpaper, ZoomBurst, HueDrift, Bloom,
     TextGhosts, DotGrid, Moire, LightLeaks,
     Scanlines, ReflectingPool, SpectralSlices, Mosaic,
@@ -115,6 +116,7 @@ export const VIZ = Object.freeze({
   GLYPH_DENDRITE: GlyphDendrite.id,
   GLYPH_REACTION: GlyphReaction.id,
   GLYPH_CYMATICS: GlyphCymatics.id,
+  GLYPH_TUNNEL: GlyphTunnel.id,
   PERLIN_GLOW: PerlinGlow.id,
   INFINITY_MIRROR: InfinityMirror.id,
   KALEIDOSCOPE: Kaleidoscope.id,

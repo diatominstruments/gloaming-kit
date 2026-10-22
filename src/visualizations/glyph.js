@@ -167,7 +167,10 @@ export function readGlyph(viz, name = 'glyph') {
  *
  * The field is tabulated once at `res` samples per cell and read back
  * bilinearly. `field.gradMax` is the steepest slope in it, per tile unit,
- * for scaling anything that follows its gradient.
+ * for scaling anything that follows its gradient. `field.table` is the
+ * tabulation itself, `field.size` its [width, height] in samples, row-major
+ * from the drawing's top row — for uploading as a texture, whose mirrored
+ * repeat wrapping tiles it the same way.
  */
 export function glyphField(glyph, { blur = 0.55, res = 16 } = {}) {
   const { width: w, height: h } = glyph;
@@ -229,6 +232,8 @@ export function glyphField(glyph, { blur = 0.55, res = 16 } = {}) {
     }
   }
   field.gradMax = Math.max(1e-6, Math.sqrt(gradMax));
+  field.table = table;
+  field.size = [W, H];
   return field;
 }
 
@@ -376,4 +381,20 @@ export const OCTAGON = [
   '...2.2...',
   '.........',
   '.........',
+];
+
+// A wheel: a strong rim, four fainter spokes and a hub. Held up to a tunnel
+// end-on, the rim is a ring of sharp turns, the spokes gentler ones and the
+// hub the way straight on; walked as a map, the route circles the rim and
+// now and then cuts down a spoke to the crossroads at the hub.
+export const WHEEL = [
+  '...222...',
+  '.22.1.22.',
+  '.2..1..2.',
+  '2...1...2',
+  '211121112',
+  '2...1...2',
+  '.2..1..2.',
+  '.22.1.22.',
+  '...222...',
 ];
