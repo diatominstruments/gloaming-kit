@@ -94,20 +94,26 @@ const NOISE_SIZE = 64;    // texels across it
  *              'strongest' (the strongest cell's exit) | 'random'
  *   speed      flight speed, world units per second
  *   radius     the tunnel's radius, world units
- *   palette    'natural' (default; each substance's own colours) | 'style'
- *              (the window's line and accent colours) | 'psychedelic'
+ *   palette    'auto' (default: 'style' for the abstract substances — carved,
+ *              cymatics, geode, neon, chrome — and 'natural' for the rest) |
+ *              'natural' (the substance's own colours) | 'style' (the
+ *              window's line and accent colours, each substance putting the
+ *              line colour on its main light and the accent on the other) |
+ *              'psychedelic'
  *   seed
  *
  * The whole scene is ray-marched in one full-screen shader, so it renders
- * at reduced RESOLUTION. The far end of the tunnel fades to transparent, so
- * a background layer shows through it.
+ * at reduced RESOLUTION. It fills the screen, so it draws in the background
+ * layer: a feedback background (hue drift, zoom burst…) that comes on after
+ * it draws over it, one that came on before shows through the tunnel's
+ * shadows and its far end, which fades to transparent.
  */
 export class GlyphTunnel extends ThreeVisualization {
   static id = 'glyph-tunnel';
   static label = 'Glyph Tunnel';
   static description = 'Flight down a tunnel of sandstone, lattice, carved stone, bronze, crystal, paper, cloud, ice, neon or chrome that branches on hard hits — the exits drawn from the drawing — and turns down one of them.';
   static category = CATEGORY.GLYPHS;
-  static layer = LAYER.MAIN;
+  static layer = LAYER.BACKGROUND;
   static fallback = 'tunnel';
   // Every pixel marches dozens of steps through the passages; upscaled, the
   // softness reads as atmosphere.
@@ -134,10 +140,11 @@ export class GlyphTunnel extends ThreeVisualization {
     choose:    { kind: 'enum', values: ['strength', 'strongest', 'random'], default: 'strength' },
     speed:     { kind: 'number', default: 3.5, min: 1, max: 8, step: 0.25 },
     radius:    { kind: 'number', default: 1.5, min: 0.8, max: 3, step: 0.1 },
-    palette:   { kind: 'enum', values: ['natural', 'style', 'psychedelic'], default: 'natural' },
+    palette:   { kind: 'enum', values: ['auto', 'natural', 'style', 'psychedelic'], default: 'auto' },
   };
 
   static FAR = 28;            // radii the view reaches
+  static COVER = 2.5;         // how opaque the wall is per unit of its brightness: under 1/COVER it is see-through
   static FOCAL = 1.3;         // focal length, of the half-height: ~75° vertical view
   static STEPS = 90;
   static SPANS = 8;           // stretches of each ray, for asking only the pieces near each
@@ -163,7 +170,7 @@ export class GlyphTunnel extends ThreeVisualization {
     this.kind = this.option('substance');
     this.substance = SUBSTANCES[this.kind];
     this.radius = this.option('radius');
-    this.paletteMode = this.option('palette');
+    this.paletteMode = this.option('palette') === 'auto' ? this.substance.palette ?? 'natural' : this.option('palette');
     this.psychedelic = this.paletteMode === 'psychedelic';
     this.far = G.FAR * this.radius;
     this.uses = new Set(this.substance.uses);
@@ -650,6 +657,7 @@ const float ELONG = ${glslFloat(substance.elong)};
 const float BLEND = ${glslFloat(substance.blend * radius)};
 const float STEP = ${glslFloat(substance.step)};
 const float RELIEF_MAX = ${glslFloat(substance.relief)};
+const float COVER = ${glslFloat(GlyphTunnel.COVER)};
 const vec3 RING_LIGHT = vec3(${(substance.ring ?? [1, 0.85, 0.6]).map(glslFloat).join(', ')});
 const float NOISE_PERIOD = ${glslFloat(NOISE_PERIOD)};
 ${defines.join('\n')}
@@ -746,9 +754,16 @@ float spectrum(float x) {
   return mix(uSpec[i >> 2][i & 3], uSpec[j >> 2][j & 3], fract(f));
 }
 
-/** A substance's own colour, or the palette's at t with the same lightness. */
+// Where the palette is the window's line colour and its accent colour, for
+// substances to put each on the light it suits.
+const float LINE = 0.75;
+const float ACCENT = 0.25;
+
+/** A substance's own colour, or the palette's at t at the same brightness. */
 vec3 tint(vec3 natural, float t) {
-  vec3 styled = palette(t) * (0.3 + 1.4 * dot(natural, vec3(0.299, 0.587, 0.114)));
+  const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+  vec3 hue = palette(t);
+  vec3 styled = hue * (dot(natural, LUMA) / max(dot(hue, LUMA), 0.08));
   return mix(natural, styled, uStyle);
 }
 
@@ -1019,10 +1034,15 @@ void main() {
       float ring = exp(-abs(s - pu.x) / (0.5 * uR)) * pu.y;
       col += peak(tint(RING_LIGHT, 0.5 + float(k) * 0.17), pu.y) * ring * 0.9;
     }
-    alpha = 1.0 - smoothstep(uFar * 0.55, uFar, t);
+    float fade = 1.0 - smoothstep(uFar * 0.55, uFar, t);
+    // Bright wall covers what's behind it; dark wall lets it show, so a
+    // background drawn first (a feedback trail, a field) glows in the
+    // tunnel's shadows instead of vanishing behind it.
+    alpha = fade * clamp(max(col.r, max(col.g, col.b)) * COVER, 0.0, 1.0);
+    col *= fade;
   }
   // Premultiplied, with alpha at least the colour, or the compositor clips it.
-  col = col * alpha + haze;
+  col += haze;
   float a = clamp(max(alpha, max(col.r, max(col.g, col.b))), 0.0, 1.0);
   gl_FragColor = vec4(min(col, vec3(a)), a);
 }

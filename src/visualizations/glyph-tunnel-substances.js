@@ -30,6 +30,10 @@
  *           steps without asking the substance
  *   ring    the colour of the rings of light announcing junctions (warm
  *           white unless given)
+ *   palette 'style' for a substance that wears the window's colours unless
+ *           told otherwise (palette 'auto', the default); 'natural' if
+ *           left out. Either way, colours go through tint(natural, t), with
+ *           t = LINE for the main light and ACCENT for the other
  *   period  world period, in radii, of anything tiled exactly (a lattice),
  *           so the camera's world position can be wrapped by it on the CPU
  *           and stay precise however far the flight has gone
@@ -230,17 +234,18 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
   // Dark slate, faintly veined.
   vec3 stone = vec3(0.11, 0.12, 0.14) * (0.75 + 0.5 * noise(w / uR * 3.0));
   float head = headlight(n, rd, t);
-  vec3 col = tint(stone, 0.6) * (0.1 + 1.1 * head) * (0.4 + 0.6 * ao);
+  // The stone stays slate whatever the palette; the light carries the colour.
+  vec3 col = stone * (0.1 + 1.1 * head) * (0.4 + 0.6 * ao);
   col += vec3(0.45, 0.5, 0.58) * pow(head, 24.0) * 0.2 * ao;
   // Light runs in the channels: the spectrum down the tunnel, bass nearest,
   // each stretch lit as far as its band is loud.
   float x = clamp((gS - uCamS) / uFar, 0.0, 1.0);
   float band = spectrum(x);
-  vec3 lamp = tint(vec3(1.0, 0.6, 0.22), x * 0.6 + 0.1);
+  vec3 lamp = tint(vec3(1.0, 0.6, 0.22), mix(LINE, ACCENT, x));
   col += lamp * c * (0.03 + band * band * (0.12 + 0.9 * uGlow));
   // A hit burns them molten, from here out to a front running away down
   // the tunnel.
-  col += peak(tint(vec3(1.0, 0.42, 0.1), 0.9), uFlare) * c * flareFront(gS) * 1.4;
+  col += peak(tint(vec3(1.0, 0.42, 0.1), ACCENT), uFlare) * c * flareFront(gS) * 1.4;
   return col;
 }
 `;
@@ -274,10 +279,10 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
   float sand = 1.0 - smoothstep(0.0, NODE, abs(a));
   sand = mix(sand, 0.3, smoothstep(0.25, 0.8, t / uFar));
   float head = headlight(n, rd, t);
-  vec3 metal = tint(vec3(0.2, 0.13, 0.08), 0.5 + 0.5 * a);
+  vec3 metal = tint(vec3(0.2, 0.13, 0.08), ACCENT);
   vec3 col = metal * (0.06 + head) * ao;
   col += vec3(0.9, 0.7, 0.45) * pow(head, 18.0) * 0.35 * ao;
-  col += tint(vec3(0.95, 0.88, 0.7), 0.3) * sand * (0.25 + 0.9 * uGlow + 0.8 * uFlare) * (0.35 + 0.8 * head) * ao;
+  col += tint(vec3(0.95, 0.88, 0.7), LINE) * sand * (0.25 + 0.9 * uGlow + 0.8 * uFlare) * (0.35 + 0.8 * head) * ao;
   return col;
 }
 `;
@@ -354,17 +359,19 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
   float h = crystal(which);
   // Deep violet at the roots, lavender at the tips, over dull host rock.
   vec3 amethyst = mix(vec3(0.22, 0.06, 0.32), vec3(0.78, 0.6, 0.95), smoothstep(0.05, 0.9, h));
-  vec3 base = mix(vec3(0.16, 0.14, 0.14), amethyst, smoothstep(0.0, 0.08, h));
-  base = tint(base, which * 0.4 + h * 0.3);
+  // Each crystal takes the line colour or the accent; the rock they grow
+  // from stays dull.
+  float hue = which < 0.5 ? LINE : ACCENT;
+  vec3 base = mix(vec3(0.16, 0.14, 0.14), tint(amethyst, hue), smoothstep(0.0, 0.08, h));
   float head = headlight(n, rd, t);
   vec3 col = base * (0.12 + 1.15 * head) * (0.3 + 0.7 * ao);
   // Light held inside the crystals, strongest toward the tips.
-  col += amethyst * h * (0.12 + 0.2 * uGlow) * smoothstep(0.0, 0.08, h);
+  col += tint(amethyst, hue) * h * (0.12 + 0.2 * uGlow) * smoothstep(0.0, 0.08, h);
   // Facets catch the light; each crystal twinkles with its own band.
   float glint = pow(head, 12.0) * (0.25 + spectrum(which) * 2.5 * uGlow) * smoothstep(0.1, 0.5, h);
-  col += tint(vec3(0.95, 0.9, 1.0), which) * glint * ao;
+  col += tint(vec3(0.95, 0.9, 1.0), hue) * glint * ao;
   // A hit lights them from within, tips first.
-  col += peak(tint(vec3(0.85, 0.5, 1.0), which), uFlare) * uFlare * h * h * 1.6;
+  col += peak(tint(vec3(0.85, 0.5, 1.0), hue), uFlare) * uFlare * h * h * 1.6;
   return col;
 }
 `;
@@ -531,13 +538,13 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
   float line = gridLine(abs(fract(a + 0.5) - 0.5), 0.03 * widen);
   // The rings carry the spectrum down the tunnel, bass nearest.
   float x = clamp((gS - uCamS) / uFar, 0.0, 1.0);
-  vec3 magenta = tint(vec3(1.0, 0.18, 0.72), 0.0);
-  vec3 cyan = tint(vec3(0.1, 0.88, 1.0), 0.5);
+  vec3 magenta = tint(vec3(1.0, 0.18, 0.72), ACCENT);
+  vec3 cyan = tint(vec3(0.1, 0.88, 1.0), LINE);
   // Dashes of data race away along the lines, as bright as the hihats.
   float lane = floor(a + 0.5);
   float dash = smoothstep(0.82, 1.0, fract(s * 0.25 - uTime * 1.6 + fract(sin(lane * 7.13) * 43.71)));
   float grid = seam();
-  vec3 col = vec3(0.02, 0.012, 0.04) * (0.25 + headlight(n, rd, t)) * ao;
+  vec3 col = tint(vec3(0.02, 0.012, 0.04), ACCENT) * (0.25 + headlight(n, rd, t)) * ao;
   col += magenta * ring * grid * (0.3 + 1.3 * spectrum(x));
   col += cyan * line * grid * (0.45 + dash * (0.4 + 3.0 * uGlow));
   // A hit flashes the rings as a front races away past them.
@@ -578,12 +585,12 @@ float wall(vec3 w, vec3 p, float vd) {
 vec3 surroundings(vec3 r) {
   float ahead = dot(r, uFw);
   float rise = dot(r, UP);
-  vec3 col = mix(vec3(0.015, 0.015, 0.025), vec3(0.4, 0.42, 0.48), smoothstep(-0.8, 0.9, rise) * 0.75 + 0.1);
+  vec3 col = tint(mix(vec3(0.015, 0.015, 0.025), vec3(0.4, 0.42, 0.48), smoothstep(-0.8, 0.9, rise) * 0.75 + 0.1), ACCENT);
   col *= 0.65 + 0.35 * (0.5 + 0.5 * sin(ahead * 11.0));
-  col += tint(vec3(1.0, 0.93, 0.85), 0.1) * smoothstep(0.7, 1.0, ahead) * 0.9;
+  col += tint(vec3(1.0, 0.93, 0.85), LINE) * smoothstep(0.7, 1.0, ahead) * 0.9;
   // The spectrum, bass behind to treble ahead, in coloured bands.
   vec3 band = mix(vec3(1.0, 0.5, 0.2), vec3(0.25, 0.55, 1.0), 0.5 + 0.5 * ahead);
-  col += tint(band, ahead * 0.6 + uTime * 0.02) * spectrum(0.5 + 0.5 * ahead) * (0.1 + 0.3 * uGlow) * (0.6 + 0.4 * sin(ahead * 23.0));
+  col += tint(band, mix(ACCENT, LINE, 0.5 + 0.5 * ahead)) * spectrum(0.5 + 0.5 * ahead) * (0.1 + 0.3 * uGlow) * (0.6 + 0.4 * sin(ahead * 23.0));
   return col;
 }
 
@@ -591,9 +598,10 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
   vec3 r = reflect(rd, n);
   float facing = max(dot(n, -rd), 0.0);
   float fresnel = 0.6 + 0.4 * pow(1.0 - facing, 5.0);
-  vec3 col = surroundings(r) * fresnel * tint(vec3(0.92, 0.94, 0.98), 0.3) * (0.35 + 0.65 * ao);
+  // The metal itself stays silver; only what it mirrors takes the colours.
+  vec3 col = surroundings(r) * fresnel * vec3(0.92, 0.94, 0.98) * (0.35 + 0.65 * ao);
   col += vec3(1.0) * pow(facing, 60.0) * 0.6 / (1.0 + t * t * 0.01 / (uR * uR));
-  col += peak(tint(vec3(1.0, 0.9, 0.8), 0.7), uFlare) * flareFront(gS) * 0.5 * fresnel;
+  col += peak(tint(vec3(1.0, 0.9, 0.8), ACCENT), uFlare) * flareFront(gS) * 0.5 * fresnel;
   return col;
 }
 `;
@@ -601,12 +609,12 @@ vec3 surface(vec3 w, vec3 p, vec3 n, vec3 rd, float t, float ao) {
 export const SUBSTANCES = {
   canyon:   { elong: 1.8, blend: 0.5, step: 0.7, relief: 0.76, uses: ['record', 'shafts'], air: true, glsl: CANYON },
   sponge:   { elong: 1, blend: 0.3, step: 0.55, relief: 0, period: 1.6, uses: [], glsl: SPONGE },
-  carved:   { elong: 1, blend: 0.35, step: 0.7, relief: 0, uses: ['field'], glsl: CARVED },
-  cymatics: { elong: 1, blend: 0.35, step: 0.75, relief: 0.07, uses: ['waves'], glsl: CYMATICS },
-  geode:    { elong: 1, blend: 0.4, step: 0.55, relief: 0.44, ring: [0.85, 0.6, 1], uses: ['profile'], glsl: GEODE },
+  carved:   { elong: 1, blend: 0.35, step: 0.7, relief: 0, palette: 'style', uses: ['field'], glsl: CARVED },
+  cymatics: { elong: 1, blend: 0.35, step: 0.75, relief: 0.07, palette: 'style', uses: ['waves'], glsl: CYMATICS },
+  geode:    { elong: 1, blend: 0.4, step: 0.55, relief: 0.44, ring: [0.85, 0.6, 1], palette: 'style', uses: ['profile'], glsl: GEODE },
   lantern:  { elong: 1, blend: 0.3, step: 0.75, relief: 0.08, uses: ['field'], glsl: LANTERN },
   cloud:    { elong: 1.15, blend: 0.6, step: 0.65, relief: 0.67, ring: [0.8, 0.86, 1], uses: ['flash'], air: true, glsl: CLOUD },
   ice:      { elong: 1, blend: 0.35, step: 0.7, relief: 0.35, ring: [0.6, 0.9, 1], uses: [], glsl: ICE },
-  neon:     { elong: 1, blend: 0.12, step: 1, relief: 0, ring: [1, 0.3, 0.85], uses: [], glsl: NEON },
-  chrome:   { elong: 1, blend: 0.7, step: 0.75, relief: 0.43, ring: [0.95, 0.97, 1], uses: [], glsl: CHROME },
+  neon:     { elong: 1, blend: 0.12, step: 1, relief: 0, ring: [1, 0.3, 0.85], palette: 'style', uses: [], glsl: NEON },
+  chrome:   { elong: 1, blend: 0.7, step: 0.75, relief: 0.43, ring: [0.95, 0.97, 1], palette: 'style', uses: [], glsl: CHROME },
 };
